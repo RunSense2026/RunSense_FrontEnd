@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r android /d/RunSense_FrontEnd/)",
+      "Bash(cp -r ios /d/RunSense_FrontEnd/)",
+      "Bash(cp -r .bundle /d/RunSense_FrontEnd/)",
+      "Bash(cp Gemfile metro.config.js jest.config.js .watchmanconfig /d/RunSense_FrontEnd/)",
+      "Bash(npm install *)",
+      "Bash(./gradlew :app:assembleDebug)",
+      "Bash(npx react-native *)",
+      "Bash(./gradlew app:installDebug -PreactNativeDevServerPort=8081)",
+      "Bash(./gradlew app:installDebug)"
+    ]
+  }
+}
