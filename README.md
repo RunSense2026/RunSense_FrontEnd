@@ -12,11 +12,12 @@ src/
 ├── assets/           # 이미지, 폰트, 아이콘
 ├── components/       # 재사용 컴포넌트
 │   ├── common/       # Button, Input 등 범용
-│   └── domain/       # 도메인별 컴포넌트
+│   └── domain/       # 도메인별 컴포넌트 (RSCard, AuthShell 등)
 ├── hooks/            # 커스텀 훅
 ├── navigation/       # 네비게이션 설정
 ├── screens/          # 화면 컴포넌트
 ├── stores/           # Zustand store
+├── theme/            # 디자인 토큰 (색상, 그라디언트, radius)
 ├── types/            # TypeScript 타입
 ├── utils/            # 유틸 함수
 └── constants/        # 상수
