@@ -136,13 +136,8 @@ const PaceRing = ({ pct, pace }: { pct: number; pace: number }) => {
             <Stop offset="55%" stopColor="#7c3aed" />
             <Stop offset="100%" stopColor="#3b82f6" />
           </SvgGradient>
-          <RadialGradient id="paceFill" cx="50%" cy="50%">
-            <Stop offset="0%" stopColor="rgba(167,139,250,0.25)" />
-            <Stop offset="100%" stopColor="rgba(167,139,250,0)" />
-          </RadialGradient>
         </Defs>
-        <Circle cx={size / 2} cy={size / 2} r={r} fill="url(#paceFill)" />
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke="url(#paceGrad)" strokeWidth={stroke} fill="none" opacity={0.15} />
         <Circle
           cx={size / 2}
           cy={size / 2}

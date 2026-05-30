@@ -33,7 +33,7 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
   return (
     <LightShell>
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
-        <NavHeader title="이번 주 목표 설정" sub="5월 12일 — 18일" onBack={() => navigation.goBack()} />
+        <NavHeader title="이번 주 목표 설정" onBack={() => navigation.goBack()} />
 
         {/* Preset cards */}
         <View className="flex-row gap-2 mb-3 mt-2">
@@ -229,7 +229,6 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
           <View className="flex-row gap-2 mt-[10px]">
             <ProjStat value={`${Math.round(km * 65)}`} label="kcal/주" />
             <ProjStat value={`${((km * 4.2) / 60).toFixed(1)}h`} label="총 시간" />
-            <ProjStat value="+0.4" label="VO₂max" tone="good" />
           </View>
           <View className="mt-[10px] px-[10px] py-2 rounded-[10px]" style={{ backgroundColor: 'rgba(255,255,255,0.5)' }}>
             <Text className="text-[11px] leading-[17px] font-medium" style={{ color: '#4a3e7a' }}>

@@ -4,12 +4,9 @@ import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Polyline } from 'react-native-svg';
 
 import { AuthShell, AEBackButton, AEField } from '@/components/domain';
-import { Checkbox } from '@/screens/LoginPasswordScreen';
 import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
-
-type AgreeKey = 'all' | 'tos' | 'privacy' | 'marketing';
 
 export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
   const [name, setName] = useState('');
@@ -17,18 +14,6 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
   const [pwd, setPwd] = useState('●●●●●●●●');
   const [pwd2, setPwd2] = useState('●●●●●●●●');
   const [focus, setFocus] = useState<'n' | 'e' | 'p' | 'p2' | null>(null);
-  const [agrees, setAgrees] = useState({ all: false, tos: true, privacy: true, marketing: false });
-
-  const handleToggle = (k: AgreeKey) => {
-    const next = { ...agrees, [k]: !agrees[k] } as typeof agrees;
-    if (k !== 'all') next.all = next.tos && next.privacy && next.marketing;
-    if (k === 'all') {
-      next.tos = !agrees.all;
-      next.privacy = !agrees.all;
-      next.marketing = !agrees.all;
-    }
-    setAgrees(next);
-  };
 
   const strength = Math.min(4, Math.max(1, Math.floor(pwd.length / 3)));
   const strengthColor =
@@ -45,9 +30,8 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: 20 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="flex-row items-center gap-3 pb-[18px]">
+        <View className="pb-[18px]">
           <AEBackButton onPress={() => navigation.goBack()} />
-          <Text className="text-[13px] text-purple-300 font-bold tracking-[0.52px]">Step 1 of 3</Text>
         </View>
 
         <Text className="text-[28px] font-bold text-white tracking-[-0.84px] leading-[34px]">
@@ -70,6 +54,7 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
             focused={focus === 'n'}
             onFocus={() => setFocus('n')}
             onBlur={() => setFocus(null)}
+            maxLength={20}
           />
           <AEField
             label="이메일"
@@ -126,22 +111,6 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
           />
         </View>
 
-        {/* Agreements */}
-        <View
-          className="mt-[18px] px-[14px] py-3 rounded-[14px]"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.14)',
-          }}
-        >
-          <AgreeRow checked={agrees.all} onToggle={() => handleToggle('all')} bold label="전체 동의" />
-          <View className="h-[0.5px] my-[10px]" style={{ backgroundColor: 'rgba(167,139,250,0.12)' }} />
-          <AgreeRow checked={agrees.tos} onToggle={() => handleToggle('tos')} label="이용약관 동의" required />
-          <AgreeRow checked={agrees.privacy} onToggle={() => handleToggle('privacy')} label="개인정보처리방침 동의" required />
-          <AgreeRow checked={agrees.marketing} onToggle={() => handleToggle('marketing')} label="마케팅 정보 수신 (선택)" />
-        </View>
-
         <Pressable onPress={() => navigation.navigate('Onboarding')} className="mt-[18px]">
           <LinearGradient
             colors={gradients.action}
@@ -156,32 +125,3 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
     </AuthShell>
   );
 };
-
-interface AgreeRowProps {
-  checked: boolean;
-  onToggle: () => void;
-  label: string;
-  required?: boolean;
-  bold?: boolean;
-}
-
-const AgreeRow = ({ checked, onToggle, label, required, bold }: AgreeRowProps) => (
-  <Pressable
-    onPress={onToggle}
-    className="flex-row items-center gap-[10px]"
-    style={{ paddingVertical: bold ? 0 : 6 }}
-  >
-    <Checkbox checked={checked} />
-    <Text
-      className={`flex-1 text-white ${bold ? 'text-[14px] font-bold' : 'text-[13px] font-medium'}`}
-    >
-      {label}
-    </Text>
-    {required && <Text className="text-[10px] text-purple-300 font-bold">필수</Text>}
-    {!bold && (
-      <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
-        <Path d="M9 6l6 6-6 6" stroke="rgba(167,139,250,0.4)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
-    )}
-  </Pressable>
-);

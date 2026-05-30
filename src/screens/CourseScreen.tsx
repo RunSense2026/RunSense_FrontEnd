@@ -57,44 +57,23 @@ export const CourseScreen = ({ navigation }: ScreenProps<'Course'>) => {
         <CourseCard
           rank={1}
           name="한강공원 합정 산책로"
-          distance="5.2km"
-          duration="28~32분"
           desc="강변 따라 평탄한 직선 코스, 공기 흐름 좋음"
           score={94}
           best
-          tags={[
-            { label: '공기 좋음', tone: 'green', icon: '🍃' },
-            { label: '평탄', tone: 'blue', icon: '─' },
-            { label: '그늘', tone: 'purple', icon: '☂' },
-          ]}
         />
         <CourseCard
           rank={2}
           name="망원동 골목 코스"
-          distance="3.8km"
-          duration="20~24분"
           desc="조용한 주택가 도심 러닝, 신호 적음"
           score={82}
-          tags={[
-            { label: '도심', tone: 'indigo', icon: '🏙' },
-            { label: '조용함', tone: 'purple', icon: '♪' },
-          ]}
         />
         <CourseCard
           rank={3}
           name="월드컵공원 둘레길"
-          distance="6.4km"
-          duration="36~42분"
           desc="언덕 구간 포함 인터벌 추천, 흙길 일부"
           score={76}
-          tags={[
-            { label: '언덕', tone: 'amber', icon: '↗' },
-            { label: '그늘', tone: 'purple', icon: '☂' },
-            { label: '흙길', tone: 'amber', icon: '⛰' },
-          ]}
         />
 
-        <WarningCard />
       </ScrollView>
       <RSTabBar active="course" onChange={handleTabPress} />
     </LightShell>
@@ -169,7 +148,6 @@ const AirQualityCard = () => (
     <View className="flex-row gap-2">
       <MiniWeather icon="🌡" label="기온" value="18°" />
       <MiniWeather icon="💧" label="습도" value="48%" />
-      <MiniWeather icon="☀" label="자외선" value="보통" />
     </View>
   </View>
 );
@@ -269,26 +247,15 @@ const MapCard = () => (
   </View>
 );
 
-const TAG_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  green: { bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.3)', text: '#047857' },
-  blue: { bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)', text: '#1d4ed8' },
-  purple: { bg: 'rgba(124,58,237,0.1)', border: 'rgba(124,58,237,0.3)', text: '#6d28d9' },
-  indigo: { bg: 'rgba(99,102,241,0.1)', border: 'rgba(99,102,241,0.3)', text: '#4338ca' },
-  amber: { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.32)', text: '#b45309' },
-};
-
 interface CourseCardProps {
   rank: number;
   name: string;
-  distance: string;
-  duration: string;
   desc: string;
   score: number;
   best?: boolean;
-  tags: { label: string; tone: keyof typeof TAG_COLORS; icon: string }[];
 }
 
-const CourseCard = ({ rank, name, distance, duration, desc, score, best, tags }: CourseCardProps) => (
+const CourseCard = ({ rank, name, desc, score, best }: CourseCardProps) => (
   <View
     className="rounded-[16px] py-[14px] px-4 mb-[10px] relative overflow-hidden"
     style={{
@@ -338,14 +305,6 @@ const CourseCard = ({ rank, name, distance, duration, desc, score, best, tags }:
       className="flex-row gap-4 mt-[10px] pt-[10px]"
       style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(124,58,237,0.14)', borderStyle: 'dashed' }}
     >
-      <View>
-        <Text className="text-[9px] font-bold tracking-[0.36px] uppercase" style={{ color: '#9b8cc5' }}>거리</Text>
-        <Text className="text-[14px] font-bold mt-[2px] tracking-[-0.28px]" style={{ color: '#1e1b4b' }}>{distance}</Text>
-      </View>
-      <View className="pl-4" style={{ borderLeftWidth: 0.5, borderLeftColor: 'rgba(124,58,237,0.14)' }}>
-        <Text className="text-[9px] font-bold tracking-[0.36px] uppercase" style={{ color: '#9b8cc5' }}>예상 시간</Text>
-        <Text className="text-[14px] font-bold mt-[2px] tracking-[-0.28px]" style={{ color: '#1e1b4b' }}>{duration}</Text>
-      </View>
       <View className="ml-auto justify-center">
         {best ? (
           <LinearGradient
@@ -366,68 +325,5 @@ const CourseCard = ({ rank, name, distance, duration, desc, score, best, tags }:
         )}
       </View>
     </View>
-
-    <View className="flex-row flex-wrap gap-[5px] mt-[10px]">
-      {tags.map((t, i) => {
-        const c = TAG_COLORS[t.tone];
-        return (
-          <View
-            key={i}
-            className="px-2 py-[3px] rounded-full flex-row items-center gap-1"
-            style={{
-              backgroundColor: c.bg,
-              borderWidth: 0.5,
-              borderColor: c.border,
-            }}
-          >
-            <Text className="text-[9px]">{t.icon}</Text>
-            <Text className="text-[10px] font-bold" style={{ color: c.text }}>{t.label}</Text>
-          </View>
-        );
-      })}
-    </View>
   </View>
-);
-
-const WarningCard = () => (
-  <LinearGradient
-    colors={['rgba(239,68,68,0.08)', 'rgba(220,38,38,0.12)']}
-    start={{ x: 0, y: 0 }}
-    end={{ x: 1, y: 1 }}
-    style={{
-      borderWidth: 0.5,
-      borderColor: 'rgba(239,68,68,0.32)',
-      borderRadius: 14,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      marginTop: 12,
-      flexDirection: 'row',
-      gap: 12,
-      alignItems: 'flex-start',
-    }}
-  >
-    <LinearGradient
-      colors={['#ef4444', '#dc2626']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-        <Path d="M12 9v4M12 17h.01" stroke="#fff" strokeWidth={2.4} strokeLinecap="round" />
-        <Path
-          d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
-          stroke="#fff"
-          strokeWidth={2.4}
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </LinearGradient>
-    <View className="flex-1">
-      <Text className="text-[12px] font-bold" style={{ color: '#dc2626' }}>대기질 경고</Text>
-      <Text className="text-[11.5px] mt-[3px] leading-[17px] font-medium" style={{ color: '#7f1d1d' }}>
-        초미세먼지(PM2.5) 76μg/m³ 이상 시 야외 러닝 대신 실내 운동을 권장드려요.
-      </Text>
-      <Text className="text-[10px] mt-[6px] font-bold" style={{ color: '#dc2626' }}>실내 트레드밀 코스 보기 →</Text>
-    </View>
-  </LinearGradient>
 );

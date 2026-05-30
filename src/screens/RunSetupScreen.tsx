@@ -270,22 +270,6 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           <MiniInfo label="내 LTHR" value="162" sub="bpm" tone="hot" />
         </View>
 
-        {/* Settings rows */}
-        <View
-          className="rounded-[16px] px-[14px] mb-[14px]"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.14)',
-          }}
-        >
-          <SetupRow icon="🎙" label="음성 코칭" value="1km마다" />
-          <View className="h-[0.5px]" style={{ backgroundColor: 'rgba(167,139,250,0.1)' }} />
-          <SetupRow icon="📍" label="코스" value="자유 GPS" />
-          <View className="h-[0.5px]" style={{ backgroundColor: 'rgba(167,139,250,0.1)' }} />
-          <SetupRow icon="🎵" label="음악" value="러닝 플레이리스트" />
-        </View>
-
         <Pressable onPress={() => navigation.navigate('DashboardA')}>
           <LinearGradient
             colors={gradients.action}
@@ -364,21 +348,6 @@ const MiniInfo = ({ label, value, sub, tone }: { label: string; value: string; s
     </View>
   );
 };
-
-const SetupRow = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
-  <View className="flex-row items-center justify-between py-3">
-    <View className="flex-row items-center gap-[10px]">
-      <Text className="text-[15px]">{icon}</Text>
-      <Text className="text-[13px] text-white font-semibold">{label}</Text>
-    </View>
-    <View className="flex-row items-center gap-[6px]">
-      <Text className="text-[12px] font-semibold" style={{ color: 'rgba(221,214,254,0.7)' }}>{value}</Text>
-      <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
-        <Path d="M9 6l6 6-6 6" stroke="rgba(167,139,250,0.5)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
-    </View>
-  </View>
-);
 
 const PaceGauge = ({ pace }: { pace: number | null }) => {
   const v = !pace ? 0.5 : Math.max(0, Math.min(1, (420 - pace) / 240));

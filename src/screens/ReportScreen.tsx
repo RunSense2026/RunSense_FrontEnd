@@ -223,18 +223,18 @@ const LegendDot = ({ color, label }: { color: string; label: string }) => (
 
 const FootHeatmap = () => {
   const left = [
-    { x: 34, y: 32, r: 11, level: 'high' as const },
-    { x: 56, y: 36, r: 9, level: 'mid' as const },
-    { x: 32, y: 70, r: 7, level: 'low' as const },
-    { x: 56, y: 70, r: 7, level: 'low' as const },
-    { x: 44, y: 110, r: 13, level: 'mid' as const },
+    { x: 30, y: 34, r: 9, level: 'mid' as const },
+    { x: 50, y: 34, r: 11, level: 'high' as const },
+    { x: 32, y: 70, r: 8, level: 'low' as const },
+    { x: 48, y: 70, r: 8, level: 'low' as const },
+    { x: 40, y: 108, r: 12, level: 'mid' as const },
   ];
   const right = [
-    { x: 34, y: 34, r: 9, level: 'mid' as const },
-    { x: 56, y: 32, r: 11, level: 'high' as const },
-    { x: 34, y: 70, r: 7, level: 'low' as const },
-    { x: 58, y: 70, r: 7, level: 'low' as const },
-    { x: 46, y: 110, r: 13, level: 'mid' as const },
+    { x: 30, y: 34, r: 11, level: 'high' as const },
+    { x: 50, y: 34, r: 9, level: 'mid' as const },
+    { x: 32, y: 70, r: 8, level: 'low' as const },
+    { x: 48, y: 70, r: 8, level: 'low' as const },
+    { x: 40, y: 108, r: 12, level: 'mid' as const },
   ];
   return (
     <View>
@@ -248,13 +248,13 @@ const FootHeatmap = () => {
       >
         <LegendDot color="#ef4444" label="높음" />
         <LegendDot color="#f59e0b" label="보통" />
-        <LegendDot color="#a78bfa" label="낮음" />
+          <LegendDot color="#10b981" label="낮음" />
       </View>
     </View>
   );
 };
 
-const FOOT_COLORS = { high: '#ef4444', mid: '#f59e0b', low: '#a78bfa' };
+const FOOT_COLORS = { high: '#ef4444', mid: '#f59e0b', low: '#10b981' };
 
 const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number; r: number; level: 'high' | 'mid' | 'low' }[] }) => (
   <View className="items-center">
@@ -362,22 +362,6 @@ const CoachSummaryCard = () => (
       <CoachBullet tone="good" title="안정적인 페이스 유지" body={`3km까지 평균 페이스 5'22"을 일관되게 유지했어요. 호흡 리듬이 좋았어요.`} />
       <CoachBullet tone="warn" title="후반 피로 누적" body="4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요." />
       <CoachBullet tone="info" title="왼발 프로네이션 주의" body="왼발 약간 과내전. 발목 강화 운동(카프 레이즈)을 추천드려요." />
-    </View>
-
-    <View className="flex-row gap-2 mt-3">
-      <Pressable
-        className="flex-1 py-[10px] rounded-[12px] items-center"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.18)',
-          borderWidth: 0.5,
-          borderColor: 'rgba(255,255,255,0.32)',
-        }}
-      >
-        <Text className="text-white text-[12px] font-bold">훈련 플랜 보기</Text>
-      </Pressable>
-      <Pressable className="flex-1 py-[10px] rounded-[12px] items-center bg-white">
-        <Text className="text-purple-500 text-[12px] font-bold">전체 분석 →</Text>
-      </Pressable>
     </View>
   </LinearGradient>
 );
