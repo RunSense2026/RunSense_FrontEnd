@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 
-import { DarkShell, DarkNavHeader } from '@/components/domain';
+import { DarkShell, RSTabBar, type TabId } from '@/components/domain';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -23,8 +23,8 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
     return arr;
   }, []);
   const currentHR = 168;
-  const minHR = 120,
-    maxHR = 180;
+  const minHR = 120;
+  const maxHR = 180;
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
@@ -32,10 +32,17 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const rmm = String(Math.floor(remaining / 60)).padStart(2, '0');
   const rss = String(remaining % 60).padStart(2, '0');
 
-  const zoneColor = (hr: number): string => {
-    if (hr < 150) return '#a78bfa';
-    if (hr < 165) return '#fbbf24';
-    return '#ef4444';
+  const zoneGradient = (hr: number): [string, string] => {
+    if (hr < 150) return ['#a78bfa', '#8b5cf6'];
+    if (hr < 165) return ['#fbbf24', '#f59e0b'];
+    return ['#ef4444', '#dc2626'];
+  };
+
+  const handleTabPress = (id: TabId) => {
+    if (id === 'home') navigation.navigate('Home');
+    else if (id === 'course') navigation.navigate('Course');
+    else if (id === 'log') navigation.navigate('History');
+    else if (id === 'settings') navigation.navigate('Settings');
   };
 
   return (
@@ -50,26 +57,37 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
         style={{ backgroundColor: 'rgba(59,130,246,0.28)' }}
         pointerEvents="none"
       />
+      <View
+        className="absolute bottom-[120px] -right-[60px] w-[200px] h-[200px] rounded-full opacity-30"
+        style={{ backgroundColor: 'rgba(239,68,68,0.32)' }}
+        pointerEvents="none"
+      />
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
-        <DarkNavHeader
-          title="LTHR 측정 중"
-          sub="체력 테스트"
-          onBack={() => navigation.goBack()}
-          right={
-            <View
-              className="rounded-full px-[10px] py-1 flex-row items-center gap-[5px]"
-              style={{
-                backgroundColor: 'rgba(239,68,68,0.18)',
-                borderWidth: 0.5,
-                borderColor: 'rgba(239,68,68,0.4)',
-              }}
-            >
-              <View className="w-[6px] h-[6px] rounded-full bg-bad-2" />
-              <Text className="text-[10px] font-bold" style={{ color: '#fca5a5' }}>REC</Text>
-            </View>
-          }
-        />
+        {/* Inline header (no back; stop button used instead) */}
+        <View className="flex-row justify-between items-center pt-1 pb-[14px]">
+          <View>
+            <Text className="text-[11px] text-purple-300 font-semibold tracking-[0.88px] uppercase">
+              체력 테스트
+            </Text>
+            <Text className="text-[22px] font-bold text-white tracking-[-0.66px] leading-[26px] mt-1">
+              LTHR 측정 중
+            </Text>
+          </View>
+          <View
+            className="rounded-full px-[10px] py-1 flex-row items-center gap-[5px]"
+            style={{
+              backgroundColor: 'rgba(239,68,68,0.18)',
+              borderWidth: 0.5,
+              borderColor: 'rgba(239,68,68,0.4)',
+            }}
+          >
+            <View className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: '#ef4444' }} />
+            <Text className="text-[10px] font-bold tracking-[0.4px]" style={{ color: '#fca5a5' }}>
+              REC
+            </Text>
+          </View>
+        </View>
 
         {/* Info banner */}
         <View
@@ -122,13 +140,16 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
             >
               {mm}:{ss}
             </Text>
-            <Text className="text-[18px] font-semibold tracking-[-0.36px]" style={{ color: 'rgba(167,139,250,0.6)' }}>/ 30:00</Text>
+            <Text className="text-[18px] font-semibold tracking-[-0.36px]" style={{ color: 'rgba(167,139,250,0.6)' }}>
+              / 30:00
+            </Text>
           </View>
           <Text className="text-[10px] text-purple-300 font-semibold tracking-[0.8px] uppercase mt-[6px]">
             남은 시간 {rmm}:{rss}
           </Text>
 
-          <View className="w-full mt-[14px]">
+          {/* Progress + phase marker */}
+          <View className="w-full mt-[14px] pb-[18px]">
             <View className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(167,139,250,0.14)' }}>
               <LinearGradient
                 colors={['#7c3aed', '#6366f1', '#3b82f6']}
@@ -139,8 +160,14 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
             </View>
             <View
               className="absolute w-px"
-              style={{ left: '33.3%', top: -2, bottom: -2, backgroundColor: 'rgba(255,255,255,0.3)' }}
+              style={{ left: '33.3%', top: -2, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' }}
             />
+            <Text
+              className="absolute text-[9px] font-semibold"
+              style={{ left: '33.3%', top: 12, marginLeft: -22, color: 'rgba(167,139,250,0.6)' }}
+            >
+              측정 시작
+            </Text>
           </View>
         </View>
 
@@ -158,24 +185,47 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
               <Text className="text-[10px] text-purple-300 font-bold tracking-[0.8px] uppercase">
                 실시간 심박수
               </Text>
-              <Text className="text-[11px] mt-[2px] font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>최근 60초</Text>
+              <Text className="text-[11px] mt-[2px] font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>
+                최근 60초
+              </Text>
             </View>
             <View className="items-end">
               <View className="flex-row items-baseline gap-1">
                 <Svg width={16} height={16} viewBox="0 0 24 24">
-                  <Path d="M12 21s-7-4.5-9.5-9.5C0.5 7 4 3 8 3c2 0 3.5 1 4 2 0.5-1 2-2 4-2 4 0 7.5 4 5.5 8.5C19 16.5 12 21 12 21z" fill="#ef4444" />
+                  <Path
+                    d="M12 21s-7-4.5-9.5-9.5C0.5 7 4 3 8 3c2 0 3.5 1 4 2 0.5-1 2-2 4-2 4 0 7.5 4 5.5 8.5C19 16.5 12 21 12 21z"
+                    fill="#ef4444"
+                  />
                 </Svg>
                 <Text className="text-[36px] font-bold text-bad-2 tracking-[-1.44px] leading-[40px]">{currentHR}</Text>
               </View>
-              <Text className="text-[10px] font-bold tracking-[0.6px]" style={{ color: '#fca5a5' }}>BPM · 무산소 영역</Text>
+              <Text className="text-[10px] font-bold tracking-[0.6px]" style={{ color: '#fca5a5' }}>
+                BPM · 무산소 영역
+              </Text>
             </View>
           </View>
 
-          {/* Bar chart */}
+          {/* Bar chart — each bar uses top→bottom gradient by zone */}
           <View className="flex-row items-end gap-[2px] h-20">
             {samples.map((hr, i) => {
               const h = Math.max(4, ((hr - minHR) / (maxHR - minHR)) * 80);
-              return <View key={i} className="flex-1 rounded-[2px]" style={{ height: h, backgroundColor: zoneColor(hr) }} />;
+              const [c1, c2] = zoneGradient(hr);
+              const isLast = i === samples.length - 1;
+              return (
+                <LinearGradient
+                  key={i}
+                  colors={[c1, c2]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{
+                    flex: 1,
+                    height: h,
+                    borderTopLeftRadius: 2,
+                    borderTopRightRadius: 2,
+                    opacity: isLast ? 1 : 0.85,
+                  }}
+                />
+              );
             })}
           </View>
 
@@ -189,12 +239,13 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
           </View>
         </View>
 
-        {/* LTHR cards */}
+        {/* LTHR pair cards */}
         <View className="flex-row gap-2 mb-[14px]">
           <LTHRStatCard label="현재 LTHR" value="—" sub="미설정" tone="muted" />
           <LTHRStatCard label="Karvonen 추정값" value="~162" sub="bpm" tone="hot" highlight />
         </View>
 
+        {/* Stop button */}
         <Pressable onPress={() => navigation.navigate('LTHRReport')}>
           <LinearGradient
             colors={['#ef4444', '#dc2626']}
@@ -203,8 +254,8 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
             style={{
               paddingVertical: 14,
               borderRadius: 14,
-              alignItems: 'center',
               flexDirection: 'row',
+              alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
             }}
@@ -220,6 +271,8 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
           중지하면 측정값이 저장되지 않습니다
         </Text>
       </ScrollView>
+
+      <RSTabBar active="run" onChange={handleTabPress} />
     </DarkShell>
   );
 };
