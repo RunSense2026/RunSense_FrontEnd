@@ -37,14 +37,6 @@ export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
           <SettingsRow label="LTHR" value="162" unit="bpm" highlight />
         </SettingsSection>
 
-        <SettingsSection icon="🎙" title="음성 코칭">
-          <SettingsRow label="음량" valueComponent={<VolumeBars value={3} />} chevron />
-          <SettingsDivider />
-          <SettingsRow label="코칭 빈도" value="1km마다" chevron />
-          <SettingsDivider />
-          <SettingsRow label="TTS 목소리" value="한국어 여성" chevron />
-        </SettingsSection>
-
         <SettingsSection icon="⚙" title="일반">
           <SettingsRow label="거리 단위" value="km" chevron />
           <SettingsDivider />
@@ -119,14 +111,6 @@ const ProfileCard = () => (
     <View className="flex-1">
       <View className="flex-row items-center gap-[6px] mb-[2px]">
         <Text className="text-[16px] font-bold tracking-[-0.32px]" style={{ color: '#1e1b4b' }}>정현우</Text>
-        <LinearGradient
-          colors={['#fbbf24', '#f59e0b']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 }}
-        >
-          <Text className="text-white text-[9px] font-bold">✦ PRO</Text>
-        </LinearGradient>
       </View>
       <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>junghyunwoo@runsense.app</Text>
       <Text className="text-[10px] font-semibold mt-1 tracking-[0.4px]" style={{ color: '#9b8cc5' }}>
@@ -204,23 +188,3 @@ const SettingsRow = ({ label, value, unit, valueComponent, chevron, highlight, m
 );
 
 const SettingsDivider = () => <View className="h-px mx-[14px]" style={{ backgroundColor: 'rgba(124,58,237,0.1)' }} />;
-
-const VolumeBars = ({ value }: { value: number }) => (
-  <View className="flex-row items-end gap-[2px]">
-    {[1, 2, 3, 4, 5].map((i) => {
-      const filled = i <= value;
-      if (filled) {
-        return (
-          <LinearGradient
-            key={i}
-            colors={['#a78bfa', '#7c3aed']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={{ width: 3, height: 4 + i * 2, borderRadius: 1 }}
-          />
-        );
-      }
-      return <View key={i} className="w-[3px] rounded-[1px]" style={{ height: 4 + i * 2, backgroundColor: 'rgba(167,139,250,0.22)' }} />;
-    })}
-  </View>
-);

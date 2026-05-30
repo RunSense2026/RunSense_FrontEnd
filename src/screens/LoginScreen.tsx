@@ -76,20 +76,6 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
           </LinearGradient>
         </Pressable>
 
-        {/* Divider */}
-        <View className="flex-row items-center gap-[10px] my-5">
-          <View className="flex-1 h-[0.5px] bg-white/10" />
-          <Text className="text-[11px] text-t3 font-medium">또는</Text>
-          <View className="flex-1 h-[0.5px] bg-white/10" />
-        </View>
-
-        {/* Social */}
-        <View className="flex-row gap-2">
-          <SocialBtn label="Apple" />
-          <SocialBtn label="Kakao" bg="#FEE500" fg="#000" />
-          <SocialBtn label="Google" />
-        </View>
-
         <Pressable onPress={() => navigation.navigate('Signup')} className="mt-[18px]">
           <Text className="text-center text-[13px] text-t2 font-medium">
             아직 계정이 없으신가요? <Text className="text-purple-300 font-semibold">회원가입</Text>
@@ -115,17 +101,4 @@ const RSLogo = () => (
     </LinearGradient>
     <Text className="text-[22px] font-bold text-white tracking-[-0.44px]">RunSense</Text>
   </View>
-);
-
-const SocialBtn = ({ label, bg, fg }: { label: string; bg?: string; fg?: string }) => (
-  <Pressable
-    className="flex-1 rounded-[12px] py-3 items-center"
-    style={{
-      backgroundColor: bg ?? 'rgba(255,255,255,0.06)',
-      borderWidth: bg ? 0 : 0.5,
-      borderColor: 'rgba(255,255,255,0.1)',
-    }}
-  >
-    <Text className="text-[12px] font-semibold" style={{ color: fg ?? '#fff' }}>{label}</Text>
-  </Pressable>
 );

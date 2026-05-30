@@ -55,12 +55,11 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
             <Text className="text-[13px] font-bold" style={{ color: '#ddd6fe' }}>연결된 기기</Text>
             <Text className="text-[11px] font-medium" style={{ color: 'rgba(167,139,250,0.6)' }}>3대</Text>
           </View>
-          <Text className="text-[10px] text-purple-300 font-semibold">모두 동기화됨</Text>
         </View>
 
-        <DeviceCard icon="L" name="왼발 인솔" model="RunSense Nano · L" sensors="FSR ×5 · IMU 6축" battery={82} rssi="−48 dBm" />
-        <DeviceCard icon="R" name="오른발 인솔" model="RunSense Nano · R" sensors="FSR ×5 · IMU 6축" battery={78} rssi="−51 dBm" />
-        <DeviceCard icon="♥" name="심박 밴드" model="Polar H10" sensors="HR · IBI · ECG" battery={64} rssi="−55 dBm" heart />
+        <DeviceCard icon="L" name="왼발 인솔" model="RunSense Nano · L" />
+        <DeviceCard icon="R" name="오른발 인솔" model="RunSense Nano · R" />
+        <DeviceCard icon="♥" name="심박 밴드" model="Polar H10" heart />
 
         <Pressable
           className="py-[13px] rounded-[14px] items-center flex-row justify-center gap-2 mt-3 mb-[18px]"
@@ -88,19 +87,10 @@ interface DeviceCardProps {
   icon: string;
   name: string;
   model: string;
-  sensors: string;
-  battery: number;
-  rssi: string;
   heart?: boolean;
 }
 
-const DeviceCard = ({ icon, name, model, sensors, battery, rssi, heart }: DeviceCardProps) => {
-  const batColor = battery > 50 ? '#a78bfa' : battery > 20 ? '#fbbf24' : '#ef4444';
-  const batGradient: [string, string, string] = battery > 50
-    ? ['#7c3aed', '#6366f1', '#3b82f6']
-    : battery > 20
-      ? ['#f59e0b', '#fbbf24', '#fbbf24']
-      : ['#dc2626', '#ef4444', '#ef4444'];
+const DeviceCard = ({ icon, name, model, heart }: DeviceCardProps) => {
 
   return (
     <View
@@ -143,9 +133,6 @@ const DeviceCard = ({ icon, name, model, sensors, battery, rssi, heart }: Device
             </View>
           </View>
           <Text className="text-[11px] font-medium" style={{ color: 'rgba(167,139,250,0.7)' }}>{model}</Text>
-          <Text className="text-[10px] font-medium mt-[3px]" style={{ color: 'rgba(167,139,250,0.55)' }}>
-            {sensors} · {rssi}
-          </Text>
         </View>
         <Pressable
           className="w-7 h-7 rounded-lg items-center justify-center"
@@ -161,23 +148,6 @@ const DeviceCard = ({ icon, name, model, sensors, battery, rssi, heart }: Device
             <Circle cx={19} cy={12} r={1.5} fill="#a78bfa" />
           </Svg>
         </Pressable>
-      </View>
-
-      <View className="mt-3">
-        <View className="flex-row justify-between mb-1">
-          <Text className="text-[9px] font-bold tracking-[0.54px] uppercase" style={{ color: 'rgba(167,139,250,0.6)' }}>
-            배터리
-          </Text>
-          <Text className="text-[12px] font-bold" style={{ color: batColor }}>{battery}%</Text>
-        </View>
-        <View className="h-[6px] rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(167,139,250,0.14)' }}>
-          <LinearGradient
-            colors={batGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ width: `${battery}%`, height: '100%', borderRadius: 999 }}
-          />
-        </View>
       </View>
     </View>
   );
