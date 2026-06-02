@@ -14,6 +14,7 @@ import { LTHRTestScreen } from '@/screens/LTHRTestScreen';
 import { LTHRReportScreen } from '@/screens/LTHRReportScreen';
 import { DevicesScreen } from '@/screens/DevicesScreen';
 import { WeeklyGoalSetupScreen } from '@/screens/WeeklyGoalSetupScreen';
+import { EditProfileScreen } from '@/screens/EditProfileScreen';
 
 import type { RootStackParamList } from '@/types/navigation';
 
@@ -48,6 +49,7 @@ export const RootNavigator = () => {
       {/* Detail */}
       <Stack.Screen name="WeeklyGoalSetup" component={WeeklyGoalSetupScreen} />
       <Stack.Screen name="Devices" component={DevicesScreen} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
     </Stack.Navigator>
   );
 };

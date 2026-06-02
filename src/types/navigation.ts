@@ -34,6 +34,7 @@ export type RootStackParamList = {
   // Detail
   WeeklyGoalSetup: undefined;
   Devices: undefined;
+  EditProfile: undefined;
 };
 
 // Props for root-stack screens.
