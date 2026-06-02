@@ -8,9 +8,10 @@ interface AEFieldProps extends Omit<TextInputProps, 'style'> {
   focused?: boolean;
   right?: ReactNode;
   hint?: string;
+  hintColor?: string;
 }
 
-export const AEField = ({ label, focused, right, hint, ...inputProps }: AEFieldProps) => {
+export const AEField = ({ label, focused, right, hint, hintColor, ...inputProps }: AEFieldProps) => {
   return (
     <View>
       <View
@@ -37,7 +38,7 @@ export const AEField = ({ label, focused, right, hint, ...inputProps }: AEFieldP
         {right}
       </View>
       {hint && (
-        <Text className="text-[10px] font-medium mt-[6px] ml-1" style={{ color: 'rgba(167,139,250,0.65)' }}>
+        <Text className="text-[10px] font-medium mt-[6px] ml-1" style={{ color: hintColor ?? 'rgba(167,139,250,0.65)' }}>
           {hint}
         </Text>
       )}

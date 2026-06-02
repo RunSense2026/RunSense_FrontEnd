@@ -36,7 +36,7 @@ export const OnboardingScreen = ({ navigation }: ScreenProps<'Onboarding'>) => {
   const [step, setStep] = useState(0);
   const cur = STEPS[step];
 
-  const handleDone = () => navigation.navigate('Home');
+  const handleDone = () => navigation.navigate('Main');
 
   return (
     <AuthShell>

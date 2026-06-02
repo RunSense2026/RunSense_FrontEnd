@@ -2,19 +2,12 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 
-import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { LightShell } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
 
-import type { ScreenProps } from '@/types/navigation';
+import type { TabScreenProps } from '@/types/navigation';
 
-export const CourseScreen = ({ navigation }: ScreenProps<'Course'>) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'settings') navigation.navigate('Settings');
-    else if (id === 'run') navigation.navigate('RunSetup');
-  };
-
+export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
   return (
     <LightShell>
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}>
@@ -75,7 +68,6 @@ export const CourseScreen = ({ navigation }: ScreenProps<'Course'>) => {
         />
 
       </ScrollView>
-      <RSTabBar active="course" onChange={handleTabPress} />
     </LightShell>
   );
 };

@@ -4,16 +4,11 @@ import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, 
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
 
+import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps } from '@/types/navigation';
 
 export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'settings') navigation.navigate('Settings');
-    else if (id === 'run') navigation.navigate('RunSetup');
-  };
+  const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
 
   return (
     <LightShell>

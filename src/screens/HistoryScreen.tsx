@@ -3,21 +3,15 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { LightShell } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
 
-import type { ScreenProps } from '@/types/navigation';
+import type { TabScreenProps } from '@/types/navigation';
 
 type Period = 'week' | 'month' | 'all';
 
-export const HistoryScreen = ({ navigation }: ScreenProps<'History'>) => {
+export const HistoryScreen = (_props: TabScreenProps<'History'>) => {
   const [period, setPeriod] = useState<Period>('week');
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'settings') navigation.navigate('Settings');
-    else if (id === 'run') navigation.navigate('RunSetup');
-  };
 
   return (
     <LightShell>
@@ -117,7 +111,6 @@ export const HistoryScreen = ({ navigation }: ScreenProps<'History'>) => {
           <RunRow date="4월 28일" weekday="화" dist="5.00" time="27:30" pace={`5'30"`} form={86} />
         </View>
       </ScrollView>
-      <RSTabBar active="log" onChange={handleTabPress} />
     </LightShell>
   );
 };

@@ -63,7 +63,7 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
         </View>
 
         <Pressable
-          onPress={() => navigation.navigate('LoginPassword', { email })}
+          onPress={() => navigation.navigate('Main')}
           className="mt-[18px]"
         >
           <LinearGradient

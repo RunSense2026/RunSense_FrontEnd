@@ -1,22 +1,21 @@
 import { useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 
 import { AuthShell, AEBackButton, AEField } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
 
-type Tab = 'id' | 'pwd';
-
 export const FindAccountScreen = ({ navigation }: ScreenProps<'FindAccount'>) => {
-  const [tab, setTab] = useState<Tab>('pwd');
-  const [phone, setPhone] = useState('010-1234-5678');
-  const [email, setEmail] = useState('jinwoo@email.com');
-  const [code, setCode] = useState('8 4 6 2');
-  const [sent, setSent] = useState(true);
-  const [focus, setFocus] = useState<'e' | 'p' | 'c' | null>(null);
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [newPwd2, setNewPwd2] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
+  const [focus, setFocus] = useState<'e' | 'c' | 'np' | 'np2' | null>(null);
 
   return (
     <AuthShell>
@@ -33,72 +32,26 @@ export const FindAccountScreen = ({ navigation }: ScreenProps<'FindAccount'>) =>
           계정 정보를{'\n'}찾아드릴게요
         </Text>
         <Text className="text-[13px] mt-2 font-medium" style={{ color: 'rgba(221,214,254,0.7)' }}>
-          가입 시 입력한 정보로 인증해주세요
+          가입한 이메일로 인증번호를 보내드릴게요
         </Text>
 
-        {/* Tab switch */}
-        <View
-          className="flex-row gap-1 rounded-[12px] p-1 mt-[22px] mb-[18px]"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.14)',
-          }}
-        >
-          {(['id', 'pwd'] as Tab[]).map((t) => {
-            const active = tab === t;
-            const label = t === 'id' ? '아이디 찾기' : '비밀번호 찾기';
-            if (active) {
-              return (
-                <Pressable key={t} onPress={() => setTab(t)} className="flex-1">
-                  <LinearGradient
-                    colors={gradients.action}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ paddingVertical: 10, borderRadius: 9, alignItems: 'center' }}
-                  >
-                    <Text className="text-white text-[13px] font-bold">{label}</Text>
-                  </LinearGradient>
-                </Pressable>
-              );
-            }
-            return (
-              <Pressable key={t} onPress={() => setTab(t)} className="flex-1 py-[10px] items-center">
-                <Text className="text-[13px] font-bold" style={{ color: 'rgba(221,214,254,0.65)' }}>{label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-
         {/* Form */}
-        <View className="gap-[10px]">
-          {tab === 'pwd' && (
-            <AEField
-              label="이메일"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              focused={focus === 'e'}
-              onFocus={() => setFocus('e')}
-              onBlur={() => setFocus(null)}
-            />
-          )}
-
+        <View className="gap-[10px] mt-[22px]">
           <AEField
-            label="휴대폰 번호"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="010-0000-0000"
-            keyboardType="phone-pad"
-            focused={focus === 'p'}
-            onFocus={() => setFocus('p')}
+            label="이메일 (아이디)"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@email.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            focused={focus === 'e'}
+            onFocus={() => setFocus('e')}
             onBlur={() => setFocus(null)}
             right={
-              <Pressable onPress={() => setSent(true)}>
-                {sent ? (
+              <Pressable onPress={() => setCodeSent(true)}>
+                {codeSent ? (
                   <View
-                    className="px-3 py-[6px] rounded-lg"
+                    className="px-3 py-[6px] rounded-[9px]"
                     style={{
                       backgroundColor: 'rgba(167,139,250,0.14)',
                       borderWidth: 0.5,
@@ -112,73 +65,102 @@ export const FindAccountScreen = ({ navigation }: ScreenProps<'FindAccount'>) =>
                     colors={gradients.action}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9 }}
                   >
-                    <Text className="text-white text-[11px] font-bold">인증번호</Text>
+                    <Text className="text-white text-[11px] font-bold">전송</Text>
                   </LinearGradient>
                 )}
               </Pressable>
             }
           />
 
-          {sent && (
+          {codeSent && (
             <AEField
               label="인증번호"
               value={code}
               onChangeText={setCode}
               placeholder="6자리 코드"
               keyboardType="number-pad"
+              maxLength={6}
               focused={focus === 'c'}
               onFocus={() => setFocus('c')}
               onBlur={() => setFocus(null)}
               right={
-                <View
-                  className="px-2 py-[3px] rounded-lg"
-                  style={{
-                    backgroundColor: 'rgba(251,191,36,0.12)',
-                    borderWidth: 0.5,
-                    borderColor: 'rgba(251,191,36,0.3)',
-                  }}
-                >
-                  <Text className="text-warn text-[11px] font-bold">02:48</Text>
-                </View>
+                codeVerified ? (
+                  <View
+                    className="flex-row items-center gap-1 px-[10px] py-[6px] rounded-[9px]"
+                    style={{
+                      backgroundColor: 'rgba(110,231,183,0.16)',
+                      borderWidth: 0.5,
+                      borderColor: 'rgba(110,231,183,0.45)',
+                    }}
+                  >
+                    <Text className="text-good text-[11px] font-bold">✓ 인증 완료</Text>
+                  </View>
+                ) : (
+                  <Pressable onPress={() => setCodeVerified(true)}>
+                    <LinearGradient
+                      colors={gradients.action}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9 }}
+                    >
+                      <Text className="text-white text-[11px] font-bold">확인</Text>
+                    </LinearGradient>
+                  </Pressable>
+                )
               }
-              hint="인증번호가 발송되었어요. 3분 안에 입력해주세요."
             />
           )}
         </View>
 
-        {/* Result preview */}
-        {tab === 'id' && (
-          <LinearGradient
-            colors={['rgba(110,231,183,0.16)', 'rgba(59,130,246,0.1)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+        {/* New password — appears after the code is verified */}
+        {codeVerified && (
+          <View
+            className="rounded-[16px] p-[14px] mt-3"
             style={{
-              marginTop: 16,
-              paddingHorizontal: 16,
-              paddingVertical: 14,
-              borderRadius: 14,
+              backgroundColor: 'rgba(255,255,255,0.04)',
               borderWidth: 0.5,
-              borderColor: 'rgba(110,231,183,0.32)',
+              borderColor: 'rgba(167,139,250,0.16)',
             }}
           >
-            <View className="flex-row items-center gap-2">
+            <View className="flex-row items-center gap-2 mb-[12px]">
               <View
-                className="w-6 h-6 rounded-lg items-center justify-center"
-                style={{ backgroundColor: 'rgba(110,231,183,0.22)' }}
+                className="w-7 h-7 rounded-lg items-center justify-center"
+                style={{ backgroundColor: 'rgba(167,139,250,0.16)' }}
               >
                 <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-                  <Polyline points="20 6 9 17 4 12" stroke="#6ee7b7" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                  <Rect x={4} y={10} width={16} height={11} rx={2.5} stroke="#a78bfa" strokeWidth={2} />
+                  <Path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="#a78bfa" strokeWidth={2} strokeLinecap="round" />
                 </Svg>
               </View>
-              <Text className="text-[11px] text-good font-bold tracking-[0.52px]">회원님의 아이디</Text>
+              <Text className="text-[13px] font-bold text-white">새 비밀번호 설정</Text>
             </View>
-            <Text className="text-[18px] text-white font-bold mt-[10px]">j••••oo@email.com</Text>
-            <Text className="text-[10px] mt-1 font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>
-              가입일: 2024.08.12
-            </Text>
-          </LinearGradient>
+
+            <View className="gap-[10px]">
+              <AEField
+                label="새 비밀번호"
+                value={newPwd}
+                onChangeText={setNewPwd}
+                placeholder="••••••••"
+                secureTextEntry
+                focused={focus === 'np'}
+                onFocus={() => setFocus('np')}
+                onBlur={() => setFocus(null)}
+                hint="8자 이상, 영문·숫자·특수문자 포함"
+              />
+              <AEField
+                label="비밀번호 확인"
+                value={newPwd2}
+                onChangeText={setNewPwd2}
+                placeholder="••••••••"
+                secureTextEntry
+                focused={focus === 'np2'}
+                onFocus={() => setFocus('np2')}
+                onBlur={() => setFocus(null)}
+              />
+            </View>
+          </View>
         )}
 
         <View className="h-[18px]" />
@@ -190,9 +172,7 @@ export const FindAccountScreen = ({ navigation }: ScreenProps<'FindAccount'>) =>
             end={{ x: 1, y: 1 }}
             style={{ paddingVertical: 15, borderRadius: 16, alignItems: 'center' }}
           >
-            <Text className="text-white text-[15px] font-bold">
-              {tab === 'id' ? '확인' : '비밀번호 재설정'}
-            </Text>
+            <Text className="text-white text-[15px] font-bold">비밀번호 변경</Text>
           </LinearGradient>
         </Pressable>
 
