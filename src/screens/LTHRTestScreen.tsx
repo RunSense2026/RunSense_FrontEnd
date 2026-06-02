@@ -1,11 +1,17 @@
-import { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { Fragment, useMemo, useState } from 'react';
+import { View, Text, Pressable, ScrollView, Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 
 import { DarkShell, RSTabBar, type TabId } from '@/components/domain';
+import { colors } from '@/theme/tokens';
+import { hrZoneColor } from '@/utils/format';
 
+import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps } from '@/types/navigation';
+
+// HR graph width = screen − ScrollView padding (18×2) − HR card padding (14×2)
+const HR_GRAPH_W = Dimensions.get('window').width - 18 * 2 - 14 * 2;
 
 export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const [elapsed] = useState(754);
@@ -23,8 +29,6 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
     return arr;
   }, []);
   const currentHR = 168;
-  const minHR = 120;
-  const maxHR = 180;
 
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
@@ -32,18 +36,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const rmm = String(Math.floor(remaining / 60)).padStart(2, '0');
   const rss = String(remaining % 60).padStart(2, '0');
 
-  const zoneGradient = (hr: number): [string, string] => {
-    if (hr < 150) return ['#a78bfa', '#8b5cf6'];
-    if (hr < 165) return ['#fbbf24', '#f59e0b'];
-    return ['#ef4444', '#dc2626'];
-  };
-
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'settings') navigation.navigate('Settings');
-  };
+  const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
 
   return (
     <DarkShell>
@@ -205,37 +198,16 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
             </View>
           </View>
 
-          {/* Bar chart — each bar uses top→bottom gradient by zone */}
-          <View className="flex-row items-end gap-[2px] h-20">
-            {samples.map((hr, i) => {
-              const h = Math.max(4, ((hr - minHR) / (maxHR - minHR)) * 80);
-              const [c1, c2] = zoneGradient(hr);
-              const isLast = i === samples.length - 1;
-              return (
-                <LinearGradient
-                  key={i}
-                  colors={[c1, c2]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0, y: 1 }}
-                  style={{
-                    flex: 1,
-                    height: h,
-                    borderTopLeftRadius: 2,
-                    borderTopRightRadius: 2,
-                    opacity: isLast ? 1 : 0.85,
-                  }}
-                />
-              );
-            })}
-          </View>
+          {/* HR line graph — zone-colored (유산소/역치/무산소) */}
+          <HRZoneGraph data={samples} width={HR_GRAPH_W} height={80} />
 
           <View
             className="flex-row gap-[10px] mt-3 pt-[10px]"
             style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(167,139,250,0.12)' }}
           >
-            <ZoneLegend color="#a78bfa" label="유산소" range="< 150" />
-            <ZoneLegend color="#fbbf24" label="역치" range="150-165" />
-            <ZoneLegend color="#ef4444" label="무산소" range="≥ 165" />
+            <ZoneLegend color={colors.semantic.good} label="유산소" range="< 150" />
+            <ZoneLegend color={colors.semantic.warn} label="역치" range="150-165" />
+            <ZoneLegend color={colors.semantic.bad} label="무산소" range="≥ 165" />
           </View>
         </View>
 
@@ -308,6 +280,42 @@ const ZoneLegend = ({ color, label, range }: { color: string; label: string; ran
     <Text className="text-[9px] font-semibold ml-[13px]" style={{ color: 'rgba(167,139,250,0.6)' }}>{range}</Text>
   </View>
 );
+
+interface HRZoneGraphProps {
+  data: number[];
+  width: number;
+  height: number;
+}
+
+// Line + area graph (same shape as the live run pace sparkline) whose
+// segments are colored per HR zone — 유산소=초록 · 역치=노랑 · 무산소=빨강.
+const HRZoneGraph = ({ data, width, height }: HRZoneGraphProps) => {
+  if (!data.length) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const step = width / (data.length - 1);
+  const pts = data.map((v, i) => [i * step, height - ((v - min) / range) * height] as const);
+
+  return (
+    <Svg width={width} height={height}>
+      {pts.slice(1).map(([x, y], i) => {
+        const [px, py] = pts[i];
+        const color = hrZoneColor((data[i] + data[i + 1]) / 2);
+        const x1 = px.toFixed(1);
+        const y1 = py.toFixed(1);
+        const x2 = x.toFixed(1);
+        const y2 = y.toFixed(1);
+        return (
+          <Fragment key={i}>
+            <Path d={`M${x1} ${y1} L${x2} ${y2} L${x2} ${height} L${x1} ${height} Z`} fill={color} fillOpacity={0.18} />
+            <Path d={`M${x1} ${y1} L${x2} ${y2}`} stroke={color} strokeWidth={1.8} strokeLinecap="round" />
+          </Fragment>
+        );
+      })}
+    </Svg>
+  );
+};
 
 const LTHR_TONES = {
   muted: { color: 'rgba(167,139,250,0.5)', border: 'rgba(167,139,250,0.12)', bg: 'rgba(255,255,255,0.03)' },

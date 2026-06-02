@@ -3,8 +3,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-import { RSTabBar, type TabId } from '@/components/domain';
-
 import type { HomeScreenProps } from '@/types/navigation';
 
 // ═════════════════════════════════════════════════════════════
@@ -12,13 +10,6 @@ import type { HomeScreenProps } from '@/types/navigation';
 // Ported from home-screen.jsx
 // ═════════════════════════════════════════════════════════════
 export const HomeScreen = ({ navigation }: HomeScreenProps) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'run') navigation.navigate('RunSetup');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'settings') navigation.navigate('Settings');
-  };
-
   return (
     <View className="flex-1 bg-[#f6f3ff]">
       <LinearGradient
@@ -70,7 +61,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
             <Text className="text-[16px] font-bold tracking-[-0.32px]" style={{ color: '#1e1b4b' }}>
               최근 러닝
             </Text>
-            <Pressable onPress={() => navigation.navigate('AllRuns')}>
+            <Pressable onPress={() => navigation.navigate('History')}>
               <Text className="text-[12px] text-purple-500 font-semibold">전체 보기 →</Text>
             </Pressable>
           </View>
@@ -80,7 +71,6 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
           <RecentRunCard date="4월 10일" weekday="목" dist="3.80" time="22:04" pace="5'48&quot;" form={78} hr={148} />
           <RecentRunCard date="4월 8일" weekday="화" dist="5.00" time="27:30" pace="5'30&quot;" form={80} hr={150} />
         </ScrollView>
-        <RSTabBar active="home" onChange={handleTabPress} />
       </SafeAreaView>
     </View>
   );

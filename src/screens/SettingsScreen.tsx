@@ -3,18 +3,11 @@ import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import type { ReactNode } from 'react';
 
-import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { LightShell } from '@/components/domain';
 
-import type { ScreenProps } from '@/types/navigation';
+import type { TabScreenProps } from '@/types/navigation';
 
-export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'run') navigation.navigate('RunSetup');
-  };
-
+export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   return (
     <LightShell>
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}>
@@ -78,7 +71,6 @@ export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
           © 2026 RunSense · 개인정보처리방침 · 이용약관
         </Text>
       </ScrollView>
-      <RSTabBar active="settings" onChange={handleTabPress} />
     </LightShell>
   );
 };

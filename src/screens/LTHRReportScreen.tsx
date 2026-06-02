@@ -124,7 +124,6 @@ export const LTHRReportScreen = ({ navigation }: ScreenProps<'LTHRReport'>) => {
         <View className="flex-row gap-2 mb-3">
           <ReportStat label="최고 심박" value="174" unit="bpm" color="#f87171" />
           <ReportStat label="평균 심박" value="158" unit="bpm" color="#a78bfa" />
-          <ReportStat label="회복 1분" value="-22" unit="bpm" color="#6ee7b7" />
         </View>
 
         {/* Training zones */}
@@ -212,7 +211,7 @@ export const LTHRReportScreen = ({ navigation }: ScreenProps<'LTHRReport'>) => {
             <RSButton variant="ghost" label="다시 측정" onPress={() => navigation.goBack()} />
           </View>
           <View className="flex-1">
-            <RSButton variant="primary" label="완료" onPress={() => navigation.navigate('Home')} />
+            <RSButton variant="primary" label="완료" onPress={() => navigation.navigate('Main')} />
           </View>
         </View>
       </ScrollView>
