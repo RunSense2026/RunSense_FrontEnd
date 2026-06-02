@@ -8,7 +8,7 @@ import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
 
-type Mode = 'dist' | 'time' | 'free' | 'lthr';
+type Mode = 'dist' | 'lthr';
 
 export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   const [mode, setMode] = useState<Mode>('dist');
@@ -16,7 +16,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   const [timeMin, setTimeMin] = useState(28);
 
   const pace = useMemo(() => {
-    if (mode === 'free' || mode === 'lthr') return null;
+    if (mode === 'lthr') return null;
     return (timeMin * 60) / distKm;
   }, [distKm, timeMin, mode]);
 
@@ -35,7 +35,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           : { label: '무산소 (Z5)', c: '#f87171' };
 
   const isLthr = mode === 'lthr';
-  const showTargetInputs = mode === 'dist' || mode === 'time';
+  const showTargetInputs = mode === 'dist';
 
   return (
     <DarkShell>
@@ -53,7 +53,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
         <DarkNavHeader title="러닝 시작" sub="오늘의 세션" onBack={() => navigation.goBack()} />
 
-        {/* Mode tabs — dist | time | free | LTHR */}
+        {/* Mode tabs — dist | LTHR */}
         <View
           className="flex-row gap-1 rounded-[12px] p-1 mb-[14px]"
           style={{
@@ -65,8 +65,6 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           {(
             [
               { id: 'dist', label: '거리' },
-              { id: 'time', label: '시간' },
-              { id: 'free', label: '자유' },
               { id: 'lthr', label: 'LTHR', accent: true },
             ] as { id: Mode; label: string; accent?: boolean }[]
           ).map((t) => {
@@ -137,16 +135,13 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
             }}
           >
             <Text className="text-[10px] text-purple-300 font-bold tracking-[0.8px] uppercase">
-              {mode === 'dist' ? '목표 거리' : '목표 시간'}
+              목표 거리
             </Text>
 
             <View className="flex-row items-center justify-between mt-[10px]">
               <StepBtn
                 label="−"
-                onPress={() => {
-                  if (mode === 'dist') setDistKm(Math.max(0.5, +(distKm - 0.5).toFixed(1)));
-                  else setTimeMin(Math.max(5, timeMin - 1));
-                }}
+                onPress={() => setDistKm(Math.max(0.5, +(distKm - 0.5).toFixed(1)))}
               />
               <View className="items-center">
                 <Text
@@ -154,28 +149,25 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
                   adjustsFontSizeToFit
                   className="text-[56px] font-bold text-white tracking-[-2.8px] leading-[58px]"
                 >
-                  {mode === 'dist' ? distKm.toFixed(2) : timeMin}
+                  {distKm.toFixed(2)}
                 </Text>
                 <Text className="text-[11px] text-purple-300 font-bold tracking-[0.88px] mt-1">
-                  {mode === 'dist' ? 'KILOMETERS' : 'MINUTES'}
+                  KILOMETERS
                 </Text>
               </View>
               <StepBtn
                 label="+"
-                onPress={() => {
-                  if (mode === 'dist') setDistKm(+(distKm + 0.5).toFixed(1));
-                  else setTimeMin(timeMin + 1);
-                }}
+                onPress={() => setDistKm(+(distKm + 0.5).toFixed(1))}
               />
             </View>
 
             <View className="flex-row gap-[6px] mt-[14px] justify-center flex-wrap">
-              {(mode === 'dist' ? [3, 5, 7, 10, 21.1] : [20, 30, 45, 60, 90]).map((v) => {
-                const active = (mode === 'dist' ? distKm : timeMin) === v;
+              {[3, 5, 7, 10, 21.1].map((v) => {
+                const active = distKm === v;
                 return (
                   <Pressable
                     key={v}
-                    onPress={() => (mode === 'dist' ? setDistKm(v) : setTimeMin(v))}
+                    onPress={() => setDistKm(v)}
                     className="px-[10px] py-[5px] rounded-full"
                     style={{
                       backgroundColor: active ? 'rgba(167,139,250,0.28)' : 'rgba(255,255,255,0.04)',
@@ -203,26 +195,14 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
               }}
             >
               <Text className="text-[11px] font-semibold" style={{ color: 'rgba(221,214,254,0.7)' }}>
-                {mode === 'dist' ? '목표 완주 시간' : '목표 거리'}
+                목표 완주 시간
               </Text>
               <View className="flex-row items-center gap-2">
-                {mode === 'dist' ? (
-                  <>
-                    <BumpBtn label="−" onPress={() => setTimeMin(Math.max(5, timeMin - 1))} />
-                    <Text className="text-[16px] font-bold text-white text-center min-w-[50px]">
-                      {timeMin}분
-                    </Text>
-                    <BumpBtn label="+" onPress={() => setTimeMin(timeMin + 1)} />
-                  </>
-                ) : (
-                  <>
-                    <BumpBtn label="−" onPress={() => setDistKm(Math.max(0.5, +(distKm - 0.5).toFixed(1)))} />
-                    <Text className="text-[16px] font-bold text-white text-center min-w-[64px]">
-                      {distKm.toFixed(1)} km
-                    </Text>
-                    <BumpBtn label="+" onPress={() => setDistKm(+(distKm + 0.5).toFixed(1))} />
-                  </>
-                )}
+                <BumpBtn label="−" onPress={() => setTimeMin(Math.max(5, timeMin - 1))} />
+                <Text className="text-[16px] font-bold text-white text-center min-w-[50px]">
+                  {timeMin}분
+                </Text>
+                <BumpBtn label="+" onPress={() => setTimeMin(timeMin + 1)} />
               </View>
             </View>
           </View>
@@ -311,22 +291,6 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
         <View className="flex-row gap-2 mb-3">
           <MiniInfo label="연결 기기" value="3" sub="모두 정상" tone="ok" />
           <MiniInfo label="내 LTHR" value="162" sub="bpm" tone="hot" />
-        </View>
-
-        {/* Setup rows */}
-        <View
-          className="rounded-[16px] px-[14px] mb-[14px]"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.14)',
-          }}
-        >
-          <SetupRow icon="🎙" label="음성 코칭" value="1km마다" />
-          <DashDivider />
-          <SetupRow icon="📍" label="코스" value="자유 GPS" />
-          <DashDivider />
-          <SetupRow icon="🎵" label="음악" value="러닝 플레이리스트" />
         </View>
 
         {/* Start button — switches color/label by mode */}
@@ -420,25 +384,6 @@ const MiniInfo = ({ label, value, sub, tone }: { label: string; value: string; s
     </View>
   );
 };
-
-const SetupRow = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
-  <View className="flex-row items-center justify-between py-3">
-    <View className="flex-row items-center gap-[10px]">
-      <Text className="text-[15px]">{icon}</Text>
-      <Text className="text-[13px] font-semibold text-white">{label}</Text>
-    </View>
-    <View className="flex-row items-center gap-[6px]">
-      <Text className="text-[12px] font-semibold" style={{ color: 'rgba(221,214,254,0.7)' }}>{value}</Text>
-      <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
-        <Path d="M9 6l6 6-6 6" stroke="rgba(167,139,250,0.5)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
-    </View>
-  </View>
-);
-
-const DashDivider = () => (
-  <View style={{ height: 0.5, backgroundColor: 'rgba(167,139,250,0.1)' }} />
-);
 
 const LTHRTestIntro = () => (
   <View className="mb-3">
@@ -560,48 +505,6 @@ const LTHRTestIntro = () => (
         <Text className="text-[10px] font-bold" style={{ color: '#fde68a' }}>70일 전 · 재측정 권장</Text>
       </View>
     </View>
-
-    {/* Checklist */}
-    <View
-      className="rounded-[14px] px-[14px] py-[10px]"
-      style={{
-        backgroundColor: 'rgba(255,255,255,0.04)',
-        borderWidth: 0.5,
-        borderColor: 'rgba(167,139,250,0.14)',
-      }}
-    >
-      <Text className="text-[10px] font-bold tracking-[0.6px] uppercase mb-[6px]" style={{ color: 'rgba(167,139,250,0.7)' }}>
-        준비 사항
-      </Text>
-      <LTHRCheck label="심박벨트 연결" ok detail="Polar H10 · 98%" />
-      <LTHRCheck label="컨디션 양호" ok detail="피로도 낮음 (HRV 정상)" />
-      <LTHRCheck label="평탄한 코스 권장" detail="기복 적은 트랙·러닝머신" />
-    </View>
-  </View>
-);
-
-const LTHRCheck = ({ label, detail, ok }: { label: string; detail: string; ok?: boolean }) => (
-  <View className="flex-row items-center gap-[10px] py-[7px]">
-    <View
-      className="w-4 h-4 rounded-full items-center justify-center"
-      style={{
-        backgroundColor: ok ? 'rgba(110,231,183,0.22)' : 'rgba(167,139,250,0.18)',
-        borderWidth: 0.5,
-        borderColor: ok ? 'rgba(110,231,183,0.5)' : 'rgba(167,139,250,0.32)',
-      }}
-    >
-      {ok ? (
-        <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
-          <Path d="M20 6 9 17l-5-5" stroke="#6ee7b7" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
-      ) : (
-        <View className="w-1 h-1 rounded-full" style={{ backgroundColor: '#a78bfa' }} />
-      )}
-    </View>
-    <Text className="text-[12px] font-semibold text-white">{label}</Text>
-    <Text className="flex-1 text-[10px] font-medium text-right" style={{ color: 'rgba(167,139,250,0.6)' }}>
-      {detail}
-    </Text>
   </View>
 );
 
