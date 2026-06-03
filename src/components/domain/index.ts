@@ -1,4 +1,3 @@
-export { PhoneFrame } from './PhoneFrame';
 export { RSTabBar, type TabId } from './RSTabBar';
 export { RSCard } from './RSCard';
 export { RSStat } from './RSStat';
@@ -6,6 +5,8 @@ export { RSSparkline } from './RSSparkline';
 export { RSCoach } from './RSCoach';
 export { RSBackground } from './RSBackground';
 export { RSButton } from './RSButton';
+export { EndRunModal } from './EndRunModal';
+export { ProfileAvatar } from './ProfileAvatar';
 export { AuthShell, AEBackButton } from './AuthShell';
 export { AEField } from './AEField';
 export { DarkShell, DarkNavHeader } from './DarkShell';

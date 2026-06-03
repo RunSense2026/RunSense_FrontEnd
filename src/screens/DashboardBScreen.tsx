@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
-import { DarkShell, RSCoach, RSButton } from '@/components/domain';
+import { DarkShell, RSCoach, RSButton, EndRunModal } from '@/components/domain';
 import { fmtPace, fmtTime, hrZone } from '@/utils/format';
 
 import type { ScreenProps } from '@/types/navigation';
@@ -12,12 +13,16 @@ import type { ScreenProps } from '@/types/navigation';
 export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
   const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
 
-  useEffect(() => {
-    if (paused) return;
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [paused]);
+  // Tick only while focused so a backgrounded run screen doesn't keep burning the JS thread.
+  useFocusEffect(
+    useCallback(() => {
+      if (paused) return;
+      const id = setInterval(() => setTick((t) => t + 1), 1000);
+      return () => clearInterval(id);
+    }, [paused]),
+  );
 
   const sec = 1068 + tick;
   const distKm = 3.24 + tick * 0.0028;
@@ -69,12 +74,24 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
 
       <View className="px-4 pb-[14px] flex-row gap-[10px]">
         <View className="flex-1">
-          <RSButton variant="danger" label="■  종료" onPress={() => navigation.navigate('Report')} />
+          <RSButton variant="danger" label="■  종료" onPress={() => setEndOpen(true)} />
         </View>
         <View style={{ flex: 1.4 }}>
           <RSButton variant="ghost" label={paused ? '▶  재개' : '⏸  일시정지'} onPress={() => setPaused((p) => !p)} />
         </View>
       </View>
+
+      <EndRunModal
+        visible={endOpen}
+        distKm={distKm}
+        sec={sec}
+        pace={fmtPace(paceSpk)}
+        onCancel={() => setEndOpen(false)}
+        onConfirm={() => {
+          setEndOpen(false);
+          navigation.navigate('Report');
+        }}
+      />
     </DarkShell>
   );
 };

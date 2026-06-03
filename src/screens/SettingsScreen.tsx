@@ -3,17 +3,13 @@ import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import type { ReactNode } from 'react';
 
-import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { LightShell, ProfileAvatar } from '@/components/domain';
+import { useProfileStore } from '@/stores/profileStore';
 
-import type { ScreenProps } from '@/types/navigation';
+import type { TabScreenProps } from '@/types/navigation';
 
-export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'course') navigation.navigate('Course');
-    else if (id === 'run') navigation.navigate('RunSetup');
-  };
+export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
+  const { name, email, age, weight, avatarUri } = useProfileStore();
 
   return (
     <LightShell>
@@ -25,12 +21,12 @@ export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
           <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>설정</Text>
         </View>
 
-        <ProfileCard />
+        <ProfileCard name={name} email={email} avatarUri={avatarUri} onEdit={() => navigation.navigate('EditProfile')} />
 
         <SettingsSection icon="👤" title="프로필">
-          <SettingsRow label="나이" value="32" unit="세" />
+          <SettingsRow label="나이" value={age} unit="세" />
           <SettingsDivider />
-          <SettingsRow label="체중" value="68.5" unit="kg" />
+          <SettingsRow label="체중" value={weight} unit="kg" />
           <SettingsDivider />
           <SettingsRow label="안정시 심박수" value="58" unit="bpm" />
           <SettingsDivider />
@@ -78,12 +74,21 @@ export const SettingsScreen = ({ navigation }: ScreenProps<'Settings'>) => {
           © 2026 RunSense · 개인정보처리방침 · 이용약관
         </Text>
       </ScrollView>
-      <RSTabBar active="settings" onChange={handleTabPress} />
     </LightShell>
   );
 };
 
-const ProfileCard = () => (
+const ProfileCard = ({
+  name,
+  email,
+  avatarUri,
+  onEdit,
+}: {
+  name: string;
+  email: string;
+  avatarUri: string | null;
+  onEdit: () => void;
+}) => (
   <LinearGradient
     colors={['rgba(255,255,255,0.95)', 'rgba(243,232,255,0.85)']}
     start={{ x: 0, y: 0 }}
@@ -99,26 +104,20 @@ const ProfileCard = () => (
       borderColor: 'rgba(124,58,237,0.2)',
     }}
   >
-    <LinearGradient
-      colors={['#a78bfa', '#7c3aed', '#3b82f6']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Text className="text-[22px] font-bold text-white tracking-[-0.44px]">JH</Text>
-    </LinearGradient>
+    <ProfileAvatar name={name} uri={avatarUri} size={60} />
 
     <View className="flex-1">
       <View className="flex-row items-center gap-[6px] mb-[2px]">
-        <Text className="text-[16px] font-bold tracking-[-0.32px]" style={{ color: '#1e1b4b' }}>정현우</Text>
+        <Text className="text-[16px] font-bold tracking-[-0.32px]" style={{ color: '#1e1b4b' }}>{name}</Text>
       </View>
-      <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>junghyunwoo@runsense.app</Text>
+      <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>{email}</Text>
       <Text className="text-[10px] font-semibold mt-1 tracking-[0.4px]" style={{ color: '#9b8cc5' }}>
         가입 2024.03 · 47회 러닝 · 234km
       </Text>
     </View>
 
     <Pressable
+      onPress={onEdit}
       className="w-8 h-8 rounded-[10px] items-center justify-center"
       style={{
         backgroundColor: 'rgba(124,58,237,0.1)',

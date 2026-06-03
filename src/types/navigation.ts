@@ -1,19 +1,24 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 
-// All screens from the RunSense design canvas. Each maps to one artboard.
-export type RootStackParamList = {
-  // Auth
-  Login: undefined;
-  LoginPassword: { email: string };
-  Signup: undefined;
-  FindAccount: undefined;
-  Onboarding: undefined;
-
-  // Main tabs
+// Bottom-tab screens (the persistent 5-tab bar; "run" is a flow launcher, not a tab).
+export type MainTabParamList = {
   Home: undefined;
   Course: undefined;
   History: undefined;
   Settings: undefined;
+};
+
+// Root stack — hosts the tab navigator plus the full-screen flows that cover it.
+export type RootStackParamList = {
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
+
+  // Auth
+  Login: undefined;
+  Signup: undefined;
+  FindAccount: undefined;
+  Onboarding: undefined;
 
   // Run flow
   RunSetup: undefined;
@@ -26,15 +31,19 @@ export type RootStackParamList = {
   LTHRTest: undefined;
   LTHRReport: undefined;
 
-  // Home details
+  // Detail
   WeeklyGoalSetup: undefined;
-  AllRuns: undefined;
-
-  // Devices
   Devices: undefined;
+  EditProfile: undefined;
 };
 
+// Props for root-stack screens.
 export type ScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;
 
-// Legacy alias kept for the boilerplate HomeScreen.
-export type HomeScreenProps = ScreenProps<'Home'>;
+// Props for tab screens — can also reach root-stack routes via the parent navigator.
+export type TabScreenProps<T extends keyof MainTabParamList> = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, T>,
+  NativeStackScreenProps<RootStackParamList>
+>;
+
+export type HomeScreenProps = TabScreenProps<'Home'>;

@@ -4,16 +4,11 @@ import Svg, { Path, Circle } from 'react-native-svg';
 
 import { DarkShell, DarkNavHeader, RSTabBar, type TabId } from '@/components/domain';
 
+import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps } from '@/types/navigation';
 
 export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
-  const handleTabPress = (id: TabId) => {
-    if (id === 'home') navigation.navigate('Home');
-    else if (id === 'log') navigation.navigate('History');
-    else if (id === 'settings') navigation.navigate('Settings');
-    else if (id === 'run') navigation.navigate('RunSetup');
-    else if (id === 'course') navigation.navigate('Course');
-  };
+  const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
 
   return (
     <DarkShell>
