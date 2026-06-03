@@ -218,17 +218,17 @@ const LegendDot = ({ color, label }: { color: string; label: string }) => (
 
 const FootHeatmap = () => {
   const left = [
-    { x: 30, y: 34, r: 9, level: 'mid' as const },
-    { x: 50, y: 34, r: 11, level: 'high' as const },
-    { x: 32, y: 70, r: 8, level: 'low' as const },
-    { x: 48, y: 70, r: 8, level: 'low' as const },
+    { x: 48, y: 18, r: 8, level: 'mid' as const },
+    { x: 30, y: 40, r: 9, level: 'mid' as const },
+    { x: 50, y: 40, r: 11, level: 'high' as const },
+    { x: 40, y: 74, r: 9, level: 'low' as const },
     { x: 40, y: 108, r: 12, level: 'mid' as const },
   ];
   const right = [
-    { x: 30, y: 34, r: 11, level: 'high' as const },
-    { x: 50, y: 34, r: 9, level: 'mid' as const },
-    { x: 32, y: 70, r: 8, level: 'low' as const },
-    { x: 48, y: 70, r: 8, level: 'low' as const },
+    { x: 32, y: 18, r: 8, level: 'mid' as const },
+    { x: 30, y: 40, r: 11, level: 'high' as const },
+    { x: 50, y: 40, r: 9, level: 'mid' as const },
+    { x: 40, y: 74, r: 9, level: 'low' as const },
     { x: 40, y: 108, r: 12, level: 'mid' as const },
   ];
   return (
@@ -262,15 +262,16 @@ const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number
     <Svg width={80} height={125} viewBox="0 0 80 125">
       <Defs>
         <SvgGradient id={`foot-bg-${side}`} x1="0" x2="0" y1="0" y2="1">
-          <Stop offset="0%" stopColor="rgba(167,139,250,0.1)" />
-          <Stop offset="100%" stopColor="rgba(124,58,237,0.04)" />
+          <Stop offset="0%" stopColor="rgba(229, 222, 250, 0.04)" />
+          <Stop offset="100%" stopColor="rgba(208, 186, 247, 0.01)" />
         </SvgGradient>
       </Defs>
       <Path
         d="M40 6 C56 6 64 20 64 38 C64 50 60 58 58 68 C58 78 60 90 58 102 C56 114 50 120 40 120 C30 120 24 114 22 102 C20 90 22 78 22 68 C20 58 16 50 16 38 C16 20 24 6 40 6 Z"
         fill={`url(#foot-bg-${side})`}
-        stroke="rgba(124,58,237,0.3)"
+        stroke="rgba(124,58,237,0.12)"
         strokeWidth={1}
+        transform={side === 'R' ? 'translate(80, 0) scale(-1, 1)' : undefined}
       />
       {dots.map((d, i) => (
         <Circle key={i} cx={d.x} cy={d.y} r={d.r} fill={FOOT_COLORS[d.level]} opacity={0.9} />
