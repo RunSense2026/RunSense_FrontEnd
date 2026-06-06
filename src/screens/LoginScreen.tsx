@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { isAxiosError } from 'axios';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 import { AuthShell, AEField } from '@/components/domain';
+import { login } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
 import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
@@ -12,6 +15,37 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
   const [focus, setFocus] = useState<'email' | 'pwd' | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const setSession = useAuthStore((s) => s.setSession);
+
+  const handleLogin = async () => {
+    if (loading) return;
+    if (!email.trim() || !pwd) {
+      setError('이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const result = await login({ email: email.trim(), loginPw: pwd });
+      setSession(result);
+      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
+    } catch (e) {
+      let message = '로그인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+      if (isAxiosError(e)) {
+        const status = e.response?.status;
+        // 인증 실패(이메일/비밀번호 불일치)
+        message =
+          status === 400 || status === 401 || status === 404
+            ? '이메일 또는 비밀번호가 일치하지 않습니다'
+            : e.response?.data?.message ?? '이메일 또는 비밀번호가 일치하지 않습니다';
+      }
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <AuthShell>
@@ -62,9 +96,17 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
           </Pressable>
         </View>
 
+        {error && (
+          <Text className="text-[12px] mt-[12px] font-medium" style={{ color: '#fca5a5' }}>
+            {error}
+          </Text>
+        )}
+
         <Pressable
-          onPress={() => navigation.navigate('Main')}
+          onPress={handleLogin}
+          disabled={loading}
           className="mt-[18px]"
+          style={{ opacity: loading ? 0.7 : 1 }}
         >
           <LinearGradient
             colors={gradients.action}
@@ -72,7 +114,11 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
             end={{ x: 1, y: 1 }}
             style={{ paddingVertical: 14, borderRadius: 14, alignItems: 'center' }}
           >
-            <Text className="text-white text-[15px] font-semibold">로그인</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-white text-[15px] font-semibold">로그인</Text>
+            )}
           </LinearGradient>
         </Pressable>
 

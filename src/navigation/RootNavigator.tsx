@@ -23,7 +23,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator = () => {
   return (
     <Stack.Navigator
-      initialRouteName="Main"
+      initialRouteName="Login"
       screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0716' } }}
     >
       {/* Bottom-tab home (Home / Course / History / Settings) */}

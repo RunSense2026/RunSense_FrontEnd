@@ -25,7 +25,7 @@ export type RootStackParamList = {
   DashboardA: undefined;
   DashboardB: undefined;
   DashboardC: undefined;
-  Report: undefined;
+  Report: { activityId?: number } | undefined;
 
   // LTHR
   LTHRTest: undefined;

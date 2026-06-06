@@ -2,14 +2,37 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 
 import { LightShell, ProfileAvatar } from '@/components/domain';
+import { logout } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { refreshToken } from '@/utils/storage';
 
 import type { TabScreenProps } from '@/types/navigation';
 
 export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   const { name, email, age, weight, avatarUri } = useProfileStore();
+  const clearSession = useAuthStore((s) => s.clearSession);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      const token = refreshToken.get();
+      // 서버에 리프레시 토큰 무효화 요청 (실패해도 로컬 세션은 정리한다)
+      if (token) {
+        await logout({ refreshToken: token });
+      }
+    } catch {
+      // 네트워크 오류 등은 무시하고 로컬 로그아웃을 진행
+    } finally {
+      clearSession();
+      navigation.navigate('Login');
+    }
+  };
 
   return (
     <LightShell>
@@ -55,12 +78,14 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
         </SettingsSection>
 
         <Pressable
-          onPress={() => navigation.navigate('Login')}
+          onPress={handleLogout}
+          disabled={loggingOut}
           className="py-[14px] rounded-[14px] items-center flex-row justify-center gap-2 mt-1"
           style={{
             backgroundColor: 'rgba(239,68,68,0.04)',
             borderWidth: 1,
             borderColor: 'rgba(239,68,68,0.45)',
+            opacity: loggingOut ? 0.6 : 1,
           }}
         >
           <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">

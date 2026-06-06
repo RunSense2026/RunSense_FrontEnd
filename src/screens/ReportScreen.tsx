@@ -1,14 +1,116 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { isAxiosError } from 'axios';
 import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { saveRun, readRun } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
+import type {
+  RunningActivityCreateRequestDto,
+  RunningActivityDetailResponseDto,
+  FootSensorDataResponseDto,
+  AiCoachingResponseDto,
+} from '@/types/api';
 
 import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps } from '@/types/navigation';
 
-export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
+type SaveState = 'idle' | 'saving' | 'saved';
+
+// "5'29" / "5'29\"" → 초 단위 (페이스 막대 높이 계산용)
+const paceToSeconds = (pace: string): number => {
+  const m = pace.match(/(\d+)'\s*(\d+)/);
+  if (!m) return 0;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
+
+const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+// "2026-05-23T19:12:37" → "5월 23일 (목) · 오전 7:14"
+const formatHeaderDate = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const h = d.getHours();
+  const ampm = h < 12 ? '오전' : '오후';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${KO_WEEKDAYS[d.getDay()]}) · ${ampm} ${h12}:${mm}`;
+};
+
+export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
   const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+
+  // History 등에서 activityId 로 들어오면 해당 기록을 상세 조회한다.
+  const activityId = route.params?.activityId;
+  const [detail, setDetail] = useState<RunningActivityDetailResponseDto | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activityId == null) return;
+    let cancelled = false;
+    setDetailLoading(true);
+    setDetailError(null);
+    readRun(activityId)
+      .then((d) => {
+        if (!cancelled) setDetail(d);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setDetailError(
+          isAxiosError(e)
+            ? e.response?.data?.message ?? '러닝 기록을 불러오지 못했어요.'
+            : '러닝 기록을 불러오는 중 오류가 발생했어요.',
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activityId]);
+
+  // 상세 데이터가 있으면 그 값으로, 없으면(갓 뛴 리포트) 목업으로 표시한다.
+  const summary = detail
+    ? { distance: detail.distance.toFixed(2), time: detail.time.replace(/^00:/, ''), pace: detail.pace }
+    : { distance: '5.24', time: '28:42', pace: `5'29"` };
+
+  const splits = detail
+    ? detail.lapSplits
+        .slice()
+        .sort((a, b) => a.lapNumber - b.lapNumber)
+        .map((s) => ({ km: Number(s.lapNumber), pace: paceToSeconds(s.lapPace), label: s.lapPace }))
+    : SPLITS;
+
+  const isViewingSaved = activityId != null;
+
+  const handleSave = async () => {
+    if (saveState !== 'idle') return;
+    if (!isAuthenticated) {
+      Alert.alert('로그인이 필요해요', '러닝 기록을 저장하려면 먼저 로그인해주세요.', [
+        { text: '취소', style: 'cancel' },
+        { text: '로그인', onPress: () => navigation.navigate('Login') },
+      ]);
+      return;
+    }
+    setSaveState('saving');
+    try {
+      const result = await saveRun(buildRunPayload());
+      setSaveState('saved');
+      Alert.alert('저장 완료', `러닝 기록이 저장되었어요. (#${result.activityId})`);
+    } catch (e) {
+      setSaveState('idle');
+      const message = isAxiosError(e)
+        ? e.response?.data?.message ?? '러닝 기록 저장에 실패했어요.'
+        : '저장 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+      Alert.alert('저장 실패', message);
+    }
+  };
 
   return (
     <LightShell>
@@ -17,18 +119,29 @@ export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
         <View className="flex-row justify-between items-center py-2">
           <View>
             <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              5월 3일 (일) · 오전 7:14
+              {detail ? formatHeaderDate(detail.activityDate) : '5월 3일 (일) · 오전 7:14'}
             </Text>
             <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>
               러닝 리포트
             </Text>
           </View>
           <View className="flex-row gap-2">
-            <IconBtn>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Path d="M12 2v13M5 9l7-7 7 7M19 16v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-              </Svg>
-            </IconBtn>
+            {/* 저장(생성) 버튼은 갓 뛴 리포트(activityId 없음)에서만 노출 */}
+            {!isViewingSaved && (
+              <IconBtn onPress={handleSave} disabled={saveState !== 'idle'}>
+                {saveState === 'saving' ? (
+                  <ActivityIndicator size="small" color="#7c3aed" />
+                ) : saveState === 'saved' ? (
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path d="M20 6L9 17l-5-5" stroke="#10b981" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                ) : (
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path d="M12 2v13M5 9l7-7 7 7M19 16v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-3" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                )}
+              </IconBtn>
+            )}
             <IconBtn>
               <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
                 <Circle cx={12} cy={12} r={3} stroke="#7c3aed" strokeWidth={2} />
@@ -40,45 +153,58 @@ export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
           </View>
         </View>
 
-        {/* Achievement banner */}
-        <LinearGradient
-          colors={['#7c3aed', '#6d28d9', '#3b82f6']}
-          locations={[0, 0.4, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-            marginBottom: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-          }}
-        >
-          <View
-            className="w-10 h-10 rounded-[12px] items-center justify-center"
-            style={{ backgroundColor: 'rgba(255,255,255,0.22)' }}
+        {/* 상세 조회 로딩/에러 */}
+        {detailLoading && (
+          <View className="py-3 flex-row items-center gap-2">
+            <ActivityIndicator size="small" color="#7c3aed" />
+            <Text className="text-[12px] font-medium" style={{ color: '#7c6bb5' }}>기록을 불러오는 중…</Text>
+          </View>
+        )}
+        {detailError && (
+          <Text className="text-[12px] font-medium py-3" style={{ color: '#b45309' }}>{detailError}</Text>
+        )}
+
+        {/* Achievement banner — 갓 뛴 리포트에서만 */}
+        {!isViewingSaved && (
+          <LinearGradient
+            colors={['#7c3aed', '#6d28d9', '#3b82f6']}
+            locations={[0, 0.4, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              borderRadius: 18,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              marginBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+            }}
           >
-            <Text className="text-[22px]">🏆</Text>
-          </View>
-          <View className="flex-1">
-            <Text className="text-[10px] font-bold tracking-[0.6px] uppercase" style={{ color: 'rgba(255,255,255,0.7)' }}>
-              새 기록
-            </Text>
-            <Text className="text-[14px] text-white font-bold mt-[1px]">5km 최고 페이스 갱신!</Text>
-          </View>
-        </LinearGradient>
+            <View
+              className="w-10 h-10 rounded-[12px] items-center justify-center"
+              style={{ backgroundColor: 'rgba(255,255,255,0.22)' }}
+            >
+              <Text className="text-[22px]">🏆</Text>
+            </View>
+            <View className="flex-1">
+              <Text className="text-[10px] font-bold tracking-[0.6px] uppercase" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                새 기록
+              </Text>
+              <Text className="text-[14px] text-white font-bold mt-[1px]">5km 최고 페이스 갱신!</Text>
+            </View>
+          </LinearGradient>
+        )}
 
         {/* Summary cards */}
         <View className="flex-row gap-2 mb-3">
-          <SummaryCard label="거리" value="5.24" unit="km" tint="#7c3aed" />
-          <SummaryCard label="시간" value="28:42" tint="#6366f1" />
-          <SummaryCard label="평균 페이스" value={`5'29"`} tint="#3b82f6" />
+          <SummaryCard label="거리" value={summary.distance} unit="km" tint="#7c3aed" />
+          <SummaryCard label="시간" value={summary.time} tint="#6366f1" />
+          <SummaryCard label="평균 페이스" value={summary.pace} tint="#3b82f6" />
         </View>
 
         <ReportCard title="스플릿 페이스" subtitle="km별 구간 페이스">
-          <SplitsChart />
+          <SplitsChart splits={splits} />
         </ReportCard>
 
         <ReportCard title="착지 히트맵" subtitle="발바닥 압력 분포">
@@ -86,10 +212,10 @@ export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
         </ReportCard>
 
         <ReportCard title="프로네이션 분석" subtitle="발의 회내·회외 정도">
-          <Pronation />
+          <Pronation footSensorData={detail?.footSensorData} />
         </ReportCard>
 
-        <CoachSummaryCard />
+        <CoachSummaryCard coachings={detail?.aiCoachings} />
 
         <View className="flex-row gap-2 mt-3 flex-wrap">
           <ReportMini label="평균 심박" value="154" unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
@@ -103,8 +229,18 @@ export const ReportScreen = ({ navigation }: ScreenProps<'Report'>) => {
   );
 };
 
-const IconBtn = ({ children }: { children: React.ReactNode }) => (
+const IconBtn = ({
+  children,
+  onPress,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  disabled?: boolean;
+}) => (
   <Pressable
+    onPress={onPress}
+    disabled={disabled}
     className="w-9 h-9 rounded-[12px] items-center justify-center"
     style={{
       backgroundColor: 'rgba(255,255,255,0.7)',
@@ -115,6 +251,64 @@ const IconBtn = ({ children }: { children: React.ReactNode }) => (
     {children}
   </Pressable>
 );
+
+// 리포트 화면에 표시된 값으로 러닝 저장 요청 본문을 구성한다.
+// (현재 화면 데이터는 목업이라 표시값과 동일하게 매핑한다 — 실데이터 연동 시 이 함수만 교체)
+const buildRunPayload = (): RunningActivityCreateRequestDto => {
+  const minPace = Math.min(...SPLITS.map((s) => s.pace));
+  const maxPace = Math.max(...SPLITS.map((s) => s.pace));
+  const range = maxPace - minPace || 1;
+  const paceStatue = (pace: number): string => {
+    const t = (pace - minPace) / range;
+    if (t < 0.33) return 'Green';
+    if (t < 0.66) return 'Yellow';
+    return 'Red';
+  };
+
+  return {
+    distance: 5.24,
+    time: '00:28:42',
+    pace: "5'29",
+    formScore: 84,
+    lapSplits: SPLITS.map((s) => ({
+      lapNumber: s.km,
+      lapPace: s.label.replace(/"/g, ''),
+      avgHeartRate: 150 + s.km,
+      paceStatue: paceStatue(s.pace),
+    })),
+    footSensorData: [
+      {
+        footSide: 'Left',
+        pronationType: '약간 과내전',
+        heelStrikeRate: 62,
+        hitmapJson: JSON.stringify({ heel: 40, midfoot: 35, forefoot: 25 }),
+      },
+      {
+        footSide: 'Right',
+        pronationType: '중립',
+        heelStrikeRate: 58,
+        hitmapJson: JSON.stringify({ heel: 38, midfoot: 36, forefoot: 26 }),
+      },
+    ],
+    aiCoachings: [
+      {
+        feedbackText: '3km까지 평균 페이스를 일관되게 유지했어요. 호흡 리듬이 좋았어요.',
+        focusPoint: '안정적인 페이스 유지',
+        recExercise: '현재 페이스 유지 훈련',
+      },
+      {
+        feedbackText: '4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요.',
+        focusPoint: '후반 피로 누적',
+        recExercise: '지구력 인터벌 훈련',
+      },
+      {
+        feedbackText: '왼발 약간 과내전. 발목 강화 운동을 추천드려요.',
+        focusPoint: '왼발 프로네이션 주의',
+        recExercise: '카프 레이즈',
+      },
+    ],
+  };
+};
 
 const SummaryCard = ({ label, value, unit, tint }: { label: string; value: string; unit?: string; tint: string }) => (
   <View
@@ -156,7 +350,13 @@ const ReportCard = ({ title, subtitle, children }: { title: string; subtitle?: s
   </View>
 );
 
-const SPLITS = [
+interface Split {
+  km: number;
+  pace: number; // 초 단위 (막대 높이용)
+  label: string;
+}
+
+const SPLITS: Split[] = [
   { km: 1, pace: 322, label: "5'22\"" },
   { km: 2, pace: 318, label: "5'18\"" },
   { km: 3, pace: 326, label: "5'26\"" },
@@ -164,9 +364,16 @@ const SPLITS = [
   { km: 5, pace: 364, label: "6'04\"" },
 ];
 
-const SplitsChart = () => {
-  const minPace = Math.min(...SPLITS.map((s) => s.pace));
-  const maxPace = Math.max(...SPLITS.map((s) => s.pace));
+const SplitsChart = ({ splits }: { splits: Split[] }) => {
+  if (splits.length === 0) {
+    return (
+      <View className="py-6 items-center">
+        <Text className="text-[12px] font-medium" style={{ color: '#9b8cc5' }}>구간 기록이 없어요.</Text>
+      </View>
+    );
+  }
+  const minPace = Math.min(...splits.map((s) => s.pace));
+  const maxPace = Math.max(...splits.map((s) => s.pace));
   const range = maxPace - minPace || 1;
   const maxBar = 100;
 
@@ -180,7 +387,7 @@ const SplitsChart = () => {
   return (
     <View>
       <View className="flex-row items-end gap-[6px]" style={{ height: maxBar + 24 }}>
-        {SPLITS.map((s) => {
+        {splits.map((s) => {
           const h = 12 + ((s.pace - minPace) / range) * (maxBar - 12);
           const [c1, c2] = colorFor(s.pace);
           return (
@@ -279,12 +486,37 @@ const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number
   </View>
 );
 
-const Pronation = () => (
-  <View className="flex-row gap-[10px]">
-    <PronationCard side="왼발" status="약간 과내전" tone="warn" tilt={-12} />
-    <PronationCard side="오른발" status="중립" tone="good" tilt={0} />
-  </View>
-);
+const isNeutralPronation = (type: string): boolean =>
+  /정상|중립|normal|neutral/i.test(type);
+
+const Pronation = ({ footSensorData }: { footSensorData?: FootSensorDataResponseDto[] }) => {
+  // 상세 데이터가 있으면 좌/우 센서로, 없으면 목업으로 표시
+  if (footSensorData && footSensorData.length > 0) {
+    return (
+      <View className="flex-row gap-[10px]">
+        {footSensorData.map((f) => {
+          const good = isNeutralPronation(f.pronationType);
+          const isLeft = /left|왼/i.test(f.footSide);
+          return (
+            <PronationCard
+              key={f.sensorDataId}
+              side={isLeft ? '왼발' : '오른발'}
+              status={f.pronationType}
+              tone={good ? 'good' : 'warn'}
+              tilt={good ? 0 : isLeft ? -12 : 12}
+            />
+          );
+        })}
+      </View>
+    );
+  }
+  return (
+    <View className="flex-row gap-[10px]">
+      <PronationCard side="왼발" status="약간 과내전" tone="warn" tilt={-12} />
+      <PronationCard side="오른발" status="중립" tone="good" tilt={0} />
+    </View>
+  );
+};
 
 const PRONATION_COLORS = {
   good: { bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.32)', text: '#047857', chip: 'rgba(16,185,129,0.18)' },
@@ -326,7 +558,7 @@ const PronationCard = ({ side, status, tone, tilt }: { side: string; status: str
   );
 };
 
-const CoachSummaryCard = () => (
+const CoachSummaryCard = ({ coachings }: { coachings?: AiCoachingResponseDto[] }) => (
   <LinearGradient
     colors={['#7c3aed', '#6d28d9', '#3b82f6']}
     locations={[0, 0.5, 1]}
@@ -354,12 +586,27 @@ const CoachSummaryCard = () => (
     </View>
 
     <View className="gap-2">
-      <CoachBullet tone="good" title="안정적인 페이스 유지" body={`3km까지 평균 페이스 5'22"을 일관되게 유지했어요. 호흡 리듬이 좋았어요.`} />
-      <CoachBullet tone="warn" title="후반 피로 누적" body="4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요." />
-      <CoachBullet tone="info" title="왼발 프로네이션 주의" body="왼발 약간 과내전. 발목 강화 운동(카프 레이즈)을 추천드려요." />
+      {coachings && coachings.length > 0 ? (
+        coachings.map((c, i) => (
+          <CoachBullet
+            key={c.coachingId}
+            tone={COACH_TONES[i % COACH_TONES.length]}
+            title={c.focusPoint}
+            body={c.recExercise ? `${c.feedbackText} (추천: ${c.recExercise})` : c.feedbackText}
+          />
+        ))
+      ) : (
+        <>
+          <CoachBullet tone="good" title="안정적인 페이스 유지" body={`3km까지 평균 페이스 5'22"을 일관되게 유지했어요. 호흡 리듬이 좋았어요.`} />
+          <CoachBullet tone="warn" title="후반 피로 누적" body="4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요." />
+          <CoachBullet tone="info" title="왼발 프로네이션 주의" body="왼발 약간 과내전. 발목 강화 운동(카프 레이즈)을 추천드려요." />
+        </>
+      )}
     </View>
   </LinearGradient>
 );
+
+const COACH_TONES = ['good', 'warn', 'info'] as const;
 
 const COACH_DOTS = { good: '#6ee7b7', warn: '#fbbf24', info: '#c4b5fd' };
 

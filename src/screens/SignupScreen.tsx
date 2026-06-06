@@ -1,20 +1,98 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { isAxiosError } from 'axios';
 import Svg, { Path, Polyline } from 'react-native-svg';
 
 import { AuthShell, AEBackButton, AEField } from '@/components/domain';
+import { signUp, checkEmailDuplicate } from '@/api';
 import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
 
 export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('jinwoo@email.com');
-  const [pwd, setPwd] = useState('●●●●●●●●');
-  const [pwd2, setPwd2] = useState('●●●●●●●●');
+  const [email, setEmail] = useState('');
+  const [pwd, setPwd] = useState('');
+  const [pwd2, setPwd2] = useState('');
   const [focus, setFocus] = useState<'n' | 'e' | 'p' | 'p2' | null>(null);
   const [emailChecked, setEmailChecked] = useState(false);
+  const [emailChecking, setEmailChecking] = useState(false);
+  const [emailHint, setEmailHint] = useState<string | null>(null);
+  const [emailHintOk, setEmailHintOk] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleEmailCheck = async () => {
+    if (emailChecking || emailChecked) return;
+    if (!email.trim()) {
+      setEmailHint('이메일을 입력해주세요.');
+      setEmailHintOk(false);
+      return;
+    }
+    setEmailChecking(true);
+    try {
+      const duplicated = await checkEmailDuplicate(email.trim());
+      if (duplicated) {
+        setEmailChecked(false);
+        setEmailHintOk(false);
+        setEmailHint('이미 사용 중인 이메일이에요.');
+      } else {
+        setEmailChecked(true);
+        setEmailHintOk(true);
+        setEmailHint('✓ 사용 가능한 이메일이에요');
+      }
+    } catch {
+      setEmailHintOk(false);
+      setEmailHint('중복 확인에 실패했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setEmailChecking(false);
+    }
+  };
+
+  const handleNext = async () => {
+    if (submitting) return;
+    setError(null);
+
+    if (name.trim().length < 2 || name.trim().length > 5) {
+      setError('이름은 2~5자로 입력해주세요.');
+      return;
+    }
+    if (!emailChecked) {
+      setError('이메일 중복 확인을 먼저 해주세요.');
+      return;
+    }
+    if (pwd.length < 8 || pwd.length > 20) {
+      setError('비밀번호는 8~20자로 입력해주세요.');
+      return;
+    }
+    if (pwd !== pwd2) {
+      setError('비밀번호가 일치하지 않아요.');
+      return;
+    }
+    if (!agreeTerms || !agreePrivacy) {
+      setError('필수 약관에 동의해주세요.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await signUp({
+        email: email.trim(),
+        loginPw: pwd,
+        userName: name.trim(),
+        isVerified: emailChecked,
+      });
+      navigation.navigate('Onboarding');
+    } catch (e) {
+      const message = isAxiosError(e)
+        ? e.response?.data?.message ?? '회원가입에 실패했어요. 입력값을 확인해주세요.'
+        : '회원가입 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // 약관 동의
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -75,18 +153,28 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
           <AEField
             label="이메일"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(t) => {
+              setEmail(t);
+              if (emailChecked || emailHint) {
+                setEmailChecked(false);
+                setEmailHint(null);
+              }
+            }}
             placeholder="you@email.com"
             keyboardType="email-address"
             autoCapitalize="none"
             focused={focus === 'e'}
             onFocus={() => setFocus('e')}
             onBlur={() => setFocus(null)}
-            hint={emailChecked ? '✓ 사용 가능한 이메일이에요' : '사용 가능 이메일을 입력 후 중복 확인해주세요'}
-            hintColor={emailChecked ? '#6ee7b7' : undefined}
+            hint={emailHint ?? '사용 가능 이메일을 입력 후 중복 확인해주세요'}
+            hintColor={emailHintOk ? '#6ee7b7' : emailHint ? '#fca5a5' : undefined}
             right={
-              <Pressable onPress={() => setEmailChecked(true)} disabled={emailChecked}>
-                {emailChecked ? (
+              <Pressable onPress={handleEmailCheck} disabled={emailChecked || emailChecking}>
+                {emailChecking ? (
+                  <View className="px-[14px] py-[7px]">
+                    <ActivityIndicator size="small" color="#a78bfa" />
+                  </View>
+                ) : emailChecked ? (
                   <View
                     className="flex-row items-center gap-1 px-[10px] py-[7px] rounded-[10px]"
                     style={{
@@ -177,14 +265,24 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
           />
         </View>
 
-        <Pressable onPress={() => navigation.navigate('Onboarding')} className="mt-[18px]">
+        {error && (
+          <Text className="text-[12px] mt-[14px] font-medium" style={{ color: '#fca5a5' }}>
+            {error}
+          </Text>
+        )}
+
+        <Pressable onPress={handleNext} disabled={submitting} className="mt-[18px]" style={{ opacity: submitting ? 0.7 : 1 }}>
           <LinearGradient
             colors={gradients.action}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={{ paddingVertical: 15, borderRadius: 16, alignItems: 'center' }}
           >
-            <Text className="text-white text-[15px] font-bold">다음 →</Text>
+            {submitting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-white text-[15px] font-bold">다음 →</Text>
+            )}
           </LinearGradient>
         </Pressable>
       </ScrollView>
