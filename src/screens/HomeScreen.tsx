@@ -79,100 +79,87 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 // ─── Air quality + weather card ──────────────────────────────────
 const AirWeatherCard = () => (
   <View
-    className="rounded-[20px] px-4 pt-4 pb-[14px] mb-3"
+    className="rounded-[20px] p-[16px] mb-3"
     style={{
       backgroundColor: 'rgba(255,255,255,0.72)',
       borderWidth: 0.5,
       borderColor: 'rgba(124,58,237,0.14)',
     }}
   >
+    {/* 3, 4, 5번 영역: 지역, 온도, 날씨 및 아이콘 */}
     <View className="flex-row justify-between items-start">
       <View>
-        <Text className="text-[11px] tracking-[0.66px] uppercase font-semibold" style={{ color: '#7c6bb5' }}>
+        <Text className="text-[12px] font-semibold" style={{ color: '#9b8cc5' }}>
           서울 · 강남구
         </Text>
-        <View className="flex-row items-baseline gap-[6px] mt-[6px]">
-          <Text className="text-[36px] font-bold tracking-[-1.44px] leading-[44px]" style={{ color: '#1e1b4b' }}>18°</Text>
-          <Text className="text-[13px] font-medium" style={{ color: '#6b5ca5' }}>맑음 · 체감 17°</Text>
+        <View className="flex-row items-baseline gap-[8px] mt-[6px]">
+          <Text className="text-[44px] font-bold tracking-[-1.5px] leading-[50px]" style={{ color: '#1e1b4b' }}>18°</Text>
+          <Text className="text-[14px] font-medium" style={{ color: '#9b8cc5' }}>맑음</Text>
         </View>
       </View>
-      <View className="w-[60px] h-[60px] relative">
+      <View className="w-[60px] h-[60px] relative justify-center items-center">
         <LinearGradient
           colors={['#fbbf24', '#f59e0b']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={{ position: 'absolute', top: 8, right: 8, width: 36, height: 36, borderRadius: 18 }}
+          style={{ width: 44, height: 44, borderRadius: 22 }}
         />
         <View
-          className="absolute bottom-[6px] left-1 w-[30px] h-[14px] rounded-full"
-          style={{ backgroundColor: 'rgba(255,255,255,0.95)' }}
+          className="absolute bottom-[8px] left-[0px] w-[32px] h-[16px] rounded-full"
+          style={{ backgroundColor: '#ffffff' }}
         />
       </View>
     </View>
 
-    {/* AQI bar */}
-    <LinearGradient
-      colors={['rgba(110,231,183,0.16)', 'rgba(59,130,246,0.1)']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ marginTop: 10, padding: 12, borderRadius: 14, borderWidth: 0.5, borderColor: 'rgba(16,185,129,0.2)' }}
-    >
-      <View className="flex-row justify-between items-center">
-        <View>
-          <Text className="text-[10px] font-bold tracking-[0.6px] uppercase" style={{ color: '#059669' }}>
-            대기질 좋음
-          </Text>
-          <View className="flex-row items-baseline gap-[5px] mt-[3px]">
-            <Text className="text-[18px] font-bold tracking-[-0.36px]" style={{ color: '#065f46' }}>32</Text>
-            <Text className="text-[11px] font-medium" style={{ color: '#047857' }}>PM2.5 ㎍/㎥</Text>
-          </View>
-        </View>
+    {/* 6, 7, 8번 영역: 대기질, 습도, 바람 카드 */}
+    <View className="flex-row gap-[10px] mt-[16px]">
+      {/* 6, 7번: 대기질 카드 */}
+      <View
+        className="flex-1 rounded-[14px] py-[12px] items-center"
+        style={{
+          backgroundColor: 'rgba(16,185,129,0.05)',
+          borderWidth: 1,
+          borderColor: 'rgba(16,185,129,0.3)',
+        }}
+      >
+        <Text className="text-[11px] font-semibold" style={{ color: '#059669' }}>대기질</Text>
+        <Text className="text-[22px] font-bold mt-[2px]" style={{ color: '#065f46' }}>32</Text>
+        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 ug/m2</Text>
         <View
-          className="flex-row items-center gap-[6px] px-[10px] py-[5px] rounded-full"
-          style={{ backgroundColor: 'rgba(16,185,129,0.18)' }}
+          className="flex-row items-center gap-[4px] px-[10px] py-[4px] rounded-full mt-[6px]"
+          style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}
         >
-          <View className="w-[6px] h-[6px] rounded-full bg-good-2" />
-          <Text className="text-[11px] font-bold" style={{ color: '#047857' }}>야외 OK</Text>
+          <View className="w-[4px] h-[4px] rounded-full bg-[#059669]" />
+          <Text className="text-[9px] font-bold" style={{ color: '#047857' }}>야외 OK</Text>
         </View>
       </View>
-      {/* AQI scale */}
-      <View className="relative h-[5px] mt-[10px] rounded-[3px] flex-row">
-        <View className="flex-1 bg-good-2 rounded-l-[3px]" />
-        <View className="flex-1 bg-warn" />
-        <View className="flex-1" style={{ backgroundColor: '#f59e0b' }} />
-        <View className="flex-1 bg-bad-2 rounded-r-[3px]" />
-        <View
-          className="absolute w-[10px] h-[10px] rounded-full bg-white"
-          style={{
-            top: -3,
-            left: '10%',
-            borderWidth: 1.5,
-            borderColor: '#10b981',
-          }}
-        />
+
+      {/* 8번: 습도 카드 */}
+      <View
+        className="flex-1 rounded-[14px] py-[12px] items-center justify-center"
+        style={{
+          backgroundColor: 'rgba(124,58,237,0.02)',
+          borderWidth: 1,
+          borderColor: 'rgba(124,58,237,0.15)',
+        }}
+      >
+        <Text className="text-[11px] font-semibold" style={{ color: '#9b8cc5' }}>습도</Text>
+        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>45%</Text>
       </View>
-    </LinearGradient>
 
-    {/* Stats row */}
-    <View className="flex-row gap-[10px] mt-[10px]">
-      <MiniWeather label="습도" value="45%" />
-      <MiniWeather label="바람" value="2 m/s" />
-      <MiniWeather label="자외선" value="낮음" tone="good" />
+      {/* 바람 카드 */}
+      <View
+        className="flex-1 rounded-[14px] py-[12px] items-center justify-center"
+        style={{
+          backgroundColor: 'rgba(124,58,237,0.02)',
+          borderWidth: 1,
+          borderColor: 'rgba(124,58,237,0.15)',
+        }}
+      >
+        <Text className="text-[11px] font-semibold" style={{ color: '#9b8cc5' }}>바람</Text>
+        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>2 m/s</Text>
+      </View>
     </View>
-  </View>
-);
-
-const MiniWeather = ({ label, value, tone }: { label: string; value: string; tone?: 'good' }) => (
-  <View className="flex-1 items-center">
-    <Text className="text-[10px] font-semibold tracking-[0.6px] uppercase" style={{ color: '#9b8cc5' }}>
-      {label}
-    </Text>
-    <Text
-      className="text-[14px] font-bold mt-[3px] tracking-[-0.14px]"
-      style={{ color: tone === 'good' ? '#059669' : '#1e1b4b' }}
-    >
-      {value}
-    </Text>
   </View>
 );
 

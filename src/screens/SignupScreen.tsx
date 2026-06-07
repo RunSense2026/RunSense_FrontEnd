@@ -94,18 +94,6 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
     }
   };
 
-  // 약관 동의
-  const [agreeTerms, setAgreeTerms] = useState(false);
-  const [agreePrivacy, setAgreePrivacy] = useState(false);
-  const [agreeMarketing, setAgreeMarketing] = useState(false);
-  const agreeAll = agreeTerms && agreePrivacy && agreeMarketing;
-  const toggleAll = () => {
-    const next = !agreeAll;
-    setAgreeTerms(next);
-    setAgreePrivacy(next);
-    setAgreeMarketing(next);
-  };
-
   const strength = Math.min(4, Math.max(1, Math.floor(pwd.length / 3)));
   const strengthColor =
     strength <= 1 ? '#ef4444' : strength <= 2 ? '#fbbf24' : strength <= 3 ? '#a78bfa' : '#6ee7b7';
@@ -121,11 +109,8 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: 20 }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="flex-row items-center gap-3 pb-[18px]">
+        <View className="pb-[18px]">
           <AEBackButton onPress={() => navigation.goBack()} />
-          <Text className="text-[13px] font-semibold tracking-[0.2px]" style={{ color: 'rgba(221,214,254,0.7)' }}>
-            Step <Text className="text-purple-300 font-bold">1</Text> of 3
-          </Text>
         </View>
 
         <Text className="text-[28px] font-bold text-white tracking-[-0.84px] leading-[34px]">
@@ -211,9 +196,10 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
             focused={focus === 'p'}
             onFocus={() => setFocus('p')}
             onBlur={() => setFocus(null)}
+            hint="8자 이상, 영문·숫자·특수문자 포함"
           />
           {/* strength meter */}
-          <View className="flex-row gap-1 -mt-1 ml-[2px] items-center">
+          <View className="flex-row gap-1 mt-1 ml-[2px] items-center">
             {[1, 2, 3, 4].map((i) => (
               <View
                 key={i}
@@ -233,35 +219,6 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
             focused={focus === 'p2'}
             onFocus={() => setFocus('p2')}
             onBlur={() => setFocus(null)}
-            hint="8자 이상, 영문·숫자·특수문자 포함"
-          />
-        </View>
-
-        {/* 약관 동의 */}
-        <View
-          className="rounded-[16px] px-[14px] py-[4px] mt-[18px]"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.04)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.16)',
-          }}
-        >
-          <Pressable onPress={toggleAll} className="flex-row items-center gap-[10px] py-[11px]">
-            <Checkbox checked={agreeAll} size={20} />
-            <Text className="flex-1 text-[14px] font-bold text-white">전체 동의</Text>
-          </Pressable>
-          <View style={{ height: 0.5, backgroundColor: 'rgba(167,139,250,0.12)' }} />
-          <TermRow label="이용약관 동의" required checked={agreeTerms} onToggle={() => setAgreeTerms((v) => !v)} />
-          <TermRow
-            label="개인정보처리방침 동의"
-            required
-            checked={agreePrivacy}
-            onToggle={() => setAgreePrivacy((v) => !v)}
-          />
-          <TermRow
-            label="마케팅 정보 수신 (선택)"
-            checked={agreeMarketing}
-            onToggle={() => setAgreeMarketing((v) => !v)}
           />
         </View>
 
@@ -289,42 +246,3 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
     </AuthShell>
   );
 };
-
-const Checkbox = ({ checked, size = 20 }: { checked: boolean; size?: number }) =>
-  checked ? (
-    <LinearGradient
-      colors={gradients.action}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: size, height: size, borderRadius: 6, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Svg width={size * 0.6} height={size * 0.6} viewBox="0 0 24 24" fill="none">
-        <Polyline points="20 6 9 17 4 12" stroke="#fff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
-    </LinearGradient>
-  ) : (
-    <View
-      className="rounded-md"
-      style={{ width: size, height: size, borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)' }}
-    />
-  );
-
-interface TermRowProps {
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  required?: boolean;
-}
-
-const TermRow = ({ label, checked, onToggle, required }: TermRowProps) => (
-  <Pressable onPress={onToggle} className="flex-row items-center gap-[10px] py-[10px]">
-    <Checkbox checked={checked} size={18} />
-    <Text className="flex-1 text-[13px] font-medium" style={{ color: 'rgba(221,214,254,0.9)' }}>
-      {label}
-    </Text>
-    {required && <Text className="text-[10px] font-bold text-purple-300">필수</Text>}
-    <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
-      <Path d="M9 6l6 6-6 6" stroke="rgba(167,139,250,0.5)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  </Pressable>
-);
