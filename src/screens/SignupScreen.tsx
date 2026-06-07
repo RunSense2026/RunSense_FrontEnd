@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { isAxiosError } from 'axios';
-import Svg, { Path, Polyline } from 'react-native-svg';
+import Svg, { Polyline } from 'react-native-svg';
 
 import { AuthShell, AEBackButton, AEField } from '@/components/domain';
 import { signUp, checkEmailDuplicate } from '@/api';
@@ -68,10 +68,6 @@ export const SignupScreen = ({ navigation }: ScreenProps<'Signup'>) => {
     }
     if (pwd !== pwd2) {
       setError('비밀번호가 일치하지 않아요.');
-      return;
-    }
-    if (!agreeTerms || !agreePrivacy) {
-      setError('필수 약관에 동의해주세요.');
       return;
     }
 

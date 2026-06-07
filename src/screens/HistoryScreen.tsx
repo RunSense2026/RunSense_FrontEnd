@@ -6,7 +6,7 @@ import { isAxiosError } from 'axios';
 import Svg, { Path, Rect } from 'react-native-svg';
 
 import { LightShell } from '@/components/domain';
-import { readAllRuns } from '@/api';
+import { readAllRuns, readRunsByDate } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { gradients } from '@/theme/tokens';
 
@@ -31,10 +31,16 @@ const formatActivityDate = (iso: string) => {
 // "00:28:42" → "28:42" (선행 00시 제거)
 const trimTime = (time: string) => time.replace(/^00:/, '');
 
-const periodCutoff = (period: Period): number => {
-  if (period === 'all') return 0;
-  const days = period === 'week' ? 7 : 30;
-  return Date.now() - days * 24 * 60 * 60 * 1000;
+// Date → "YYYY-MM-DD" (서버 기간 조회 파라미터 형식)
+const toYMD = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// 주간/월간 탭의 시작·종료일 계산
+const periodRange = (period: Period): { startDate: string; endDate: string } => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - (period === 'week' ? 7 : 30));
+  return { startDate: toYMD(start), endDate: toYMD(end) };
 };
 
 export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
@@ -45,6 +51,7 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // period 에 따라 전체(GET /api/run) 또는 기간(GET /api/run/date) 조회
   const load = useCallback(async (isRefresh = false) => {
     if (!isAuthenticated) {
       setError('러닝 기록을 보려면 로그인해주세요.');
@@ -55,7 +62,13 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
     else setLoading(true);
     setError(null);
     try {
-      const result = await readAllRuns();
+      let result: RunningActivityListResponseDto;
+      if (period === 'all') {
+        result = await readAllRuns();
+      } else {
+        const { startDate, endDate } = periodRange(period);
+        result = await readRunsByDate(startDate, endDate);
+      }
       setData(result);
     } catch (e) {
       const message = isAxiosError(e)
@@ -66,20 +79,21 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, period]);
 
-  // 화면에 포커스될 때마다 새로고침 (저장 후 돌아오면 최신 목록 반영)
+  // 화면 포커스 시 + period 변경 시 새로고침 (서버가 기간 필터링)
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
   );
 
-  const cutoff = periodCutoff(period);
+  // 서버가 기간 필터링을 하므로 클라이언트는 최신순 정렬만 한다.
   const activities = (data?.activities ?? [])
     .slice()
-    .sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime())
-    .filter((a) => new Date(a.activityDate).getTime() >= cutoff);
+    .sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime());
+
+  const periodLabel = period === 'week' ? '최근 7일' : period === 'month' ? '최근 30일' : '전체';
 
   return (
     <LightShell>
@@ -147,10 +161,10 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
           })}
         </View>
 
-        {/* Summary cards — 전체 누적 (서버 합계) */}
+        {/* Summary cards — 선택 기간 합계 (서버 집계) */}
         <View className="flex-row gap-2 mb-[14px]">
-          <HSummaryCard label="총 거리" value={(data?.totalDistance ?? 0).toFixed(1)} unit="km" trend="전체 누적" />
-          <HSummaryCard label="러닝 횟수" value={String(data?.totalCount ?? 0)} unit="회" trend="전체" trendGood />
+          <HSummaryCard label="총 거리" value={(data?.totalDistance ?? 0).toFixed(1)} unit="km" trend={periodLabel} />
+          <HSummaryCard label="러닝 횟수" value={String(data?.totalCount ?? 0)} unit="회" trend={periodLabel} trendGood />
           <HSummaryCard label="평균 폼" value={Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
         </View>
 
