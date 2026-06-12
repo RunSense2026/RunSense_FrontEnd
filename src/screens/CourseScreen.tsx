@@ -1,10 +1,14 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, type DimensionValue } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 
 import { LightShell } from '@/components/domain';
+import { fetchWeatherData, fetchAirQualityData } from '@/api';
 import { gradients } from '@/theme/tokens';
+import { DEFAULT_LOCATION } from '@/constants/location';
 
+import type { WeatherItem } from '@/types/publicApi';
 import type { TabScreenProps } from '@/types/navigation';
 
 export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
@@ -15,7 +19,7 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
         <View className="flex-row justify-between items-start py-1 pb-[14px]">
           <View>
             <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              📍 서울 마포구 합정동
+              📍 {DEFAULT_LOCATION.NAME}
             </Text>
             <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>
               오늘의 추천 코스
@@ -72,77 +76,174 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
   );
 };
 
-const AirQualityCard = () => (
-  <View
-    className="rounded-[18px] p-[14px] mb-3"
-    style={{
-      backgroundColor: 'rgba(255,255,255,0.78)',
-      borderWidth: 0.5,
-      borderColor: 'rgba(124,58,237,0.14)',
-    }}
-  >
-    <View className="flex-row justify-between items-start mb-3">
-      <View className="flex-1">
-        <Text className="text-[10px] font-bold tracking-[0.8px] uppercase" style={{ color: '#9b8cc5' }}>
-          현재 대기질
-        </Text>
-        <View className="flex-row items-baseline gap-2 mt-[6px] flex-wrap">
-          <Text className="text-[32px] font-bold text-good-2 tracking-[-1.28px] leading-[40px]">32</Text>
-          <Text className="text-[12px] font-semibold" style={{ color: '#9b8cc5' }}>μg/m³</Text>
-          <View
-            className="px-[9px] py-[3px] rounded-full flex-row items-center gap-1"
-            style={{ backgroundColor: 'rgba(16,185,129,0.14)' }}
-          >
-            <View className="w-[6px] h-[6px] rounded-full bg-good-2" />
-            <Text className="text-[11px] font-bold" style={{ color: '#047857' }}>좋음</Text>
+const AirQualityCard = () => {
+  const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
+  const [airData, setAirData] = useState<{ value: string; label: string; grade: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getCourseData = async () => {
+      try {
+        const [weather, air] = await Promise.all([
+          fetchWeatherData(DEFAULT_LOCATION.NX, DEFAULT_LOCATION.NY),
+          fetchAirQualityData(DEFAULT_LOCATION.STATION_NAME),
+        ]);
+
+        setWeatherItems(weather);
+
+        if (air) {
+          const grade = air.pm25Grade || air.khaiGrade || '2';
+          let label = '보통'; // 기본 2등급
+          if (grade === '1') label = '좋음'; // 1등급 (초록색)
+          else if (grade === '2') label = '보통'; // 2등급 (노란색)
+          else if (grade === '3') label = '나쁨';
+          else if (grade === '4') label = '매우 나쁨'; // 4등급 (빨간색)
+
+          let displayValue = air.pm25Value;
+          if (!displayValue || displayValue === '-') {
+            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
+          }
+
+          setAirData({ value: displayValue, label, grade });
+        }
+      } catch (err) {
+        setError('날씨/대기질 정보를 불러오지 못했습니다.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getCourseData();
+  }, []);
+
+  if (loading) {
+    return (
+      <View className="rounded-[18px] p-[14px] mb-3 h-[180px] justify-center items-center" style={{ backgroundColor: 'rgba(255,255,255,0.78)', borderWidth: 0.5, borderColor: 'rgba(124,58,237,0.14)' }}>
+        <ActivityIndicator color="#7c3aed" />
+        <Text className="text-[12px] font-medium mt-2" style={{ color: '#9b8cc5' }}>대기질 정보 로딩 중...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View className="rounded-[18px] p-[14px] mb-3 h-[180px] justify-center items-center" style={{ backgroundColor: 'rgba(255,255,255,0.78)', borderWidth: 0.5, borderColor: 'rgba(124,58,237,0.14)' }}>
+        <Text className="text-[13px] font-medium" style={{ color: '#ef4444' }}>{error}</Text>
+      </View>
+    );
+  }
+
+  const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
+  const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '48';
+
+  const airValue = airData?.value ?? '32';
+  const airLabel = airData?.label ?? '좋음';
+  const grade = airData?.grade ?? '2';
+
+  // 하단 눈금 바(초록, 노랑, 주황, 빨강)에 맞춘 색상 및 텍스트 매핑
+  let mainColor = '#fbbf24'; // 기본 2등급(보통): 노란색
+  let badgeBg = 'rgba(251,191,36,0.14)';
+  let descText = 'PM2.5 · 야외 활동 무난해요';
+
+  if (grade === '1') {
+    mainColor = '#10b981'; badgeBg = 'rgba(16,185,129,0.14)'; descText = 'PM2.5 · 러닝하기 아주 좋아요';
+  } else if (grade === '3') {
+    mainColor = '#f97316'; badgeBg = 'rgba(249,115,22,0.14)'; descText = 'PM2.5 · 무리한 러닝은 피하세요';
+  } else if (grade === '4') {
+    mainColor = '#ef4444'; badgeBg = 'rgba(239,68,68,0.14)'; descText = 'PM2.5 · 야외 활동을 자제하세요';
+  }
+
+  // 게이지 바 퍼센트 계산 (각 구간별 비례하여 포인터 위치 정확히 계산)
+  const numericVal = parseInt(airValue, 10);
+  let markerPercent = 0;
+  
+  if (!isNaN(numericVal)) {
+    if (numericVal <= 15) {
+      markerPercent = (numericVal / 15) * 25; // 0 ~ 25% 구간
+    } else if (numericVal <= 35) {
+      markerPercent = 25 + ((numericVal - 15) / 20) * 25; // 25 ~ 50% 구간
+    } else if (numericVal <= 75) {
+      markerPercent = 50 + ((numericVal - 35) / 40) * 25; // 50 ~ 75% 구간
+    } else {
+      markerPercent = 75 + ((Math.min(100, numericVal) - 75) / 25) * 25; // 75 ~ 100% 구간
+    }
+  }
+
+  const markerLeft: DimensionValue = isNaN(numericVal) ? '30%' : `${Math.max(2, Math.min(98, markerPercent))}%`;
+
+  return (
+    <View
+      className="rounded-[18px] p-[14px] mb-3"
+      style={{
+        backgroundColor: 'rgba(255,255,255,0.78)',
+        borderWidth: 0.5,
+        borderColor: 'rgba(124,58,237,0.14)',
+      }}
+    >
+      <View className="flex-row justify-between items-start mb-3">
+        <View className="flex-1">
+          <Text className="text-[10px] font-bold tracking-[0.8px] uppercase" style={{ color: '#9b8cc5' }}>
+            현재 대기질
+          </Text>
+          <View className="flex-row items-baseline gap-2 mt-[6px] flex-wrap">
+            <Text className="text-[32px] font-bold tracking-[-1.28px] leading-[40px]" style={{ color: mainColor }}>{airValue}</Text>
+            <Text className="text-[12px] font-semibold" style={{ color: '#9b8cc5' }}>μg/m³</Text>
+            <View
+              className="px-[9px] py-[3px] rounded-full flex-row items-center gap-1"
+              style={{ backgroundColor: badgeBg }}
+            >
+              <View className="w-[6px] h-[6px] rounded-full" style={{ backgroundColor: mainColor }} />
+              <Text className="text-[11px] font-bold" style={{ color: mainColor }}>{airLabel}</Text>
+            </View>
           </View>
+          <Text className="text-[11px] mt-1 font-medium" style={{ color: '#6b5ca5' }}>{descText}</Text>
         </View>
-        <Text className="text-[11px] mt-1 font-medium" style={{ color: '#6b5ca5' }}>PM2.5 · 러닝하기 좋아요</Text>
-      </View>
 
-      <LinearGradient
-        colors={['#fbbf24', '#f59e0b']}
-        start={{ x: 0.35, y: 0.35 }}
-        end={{ x: 1, y: 1 }}
-        style={{ width: 56, height: 56, borderRadius: 28 }}
-      />
-    </View>
-
-    {/* PM scale */}
-    <View className="mb-3">
-      <View className="flex-row h-[6px] rounded-[3px] overflow-hidden relative">
-        <View className="flex-1 bg-good-2" />
-        <View className="flex-1 bg-warn" />
-        <View className="flex-1" style={{ backgroundColor: '#f97316' }} />
-        <View className="flex-1 bg-bad-2" />
-      </View>
-      <View className="relative">
-        <View
-          className="absolute w-[14px] h-[14px] rounded-full bg-white"
-          style={{
-            left: '13%',
-            marginLeft: -7,
-            top: -10,
-            borderWidth: 2,
-            borderColor: '#10b981',
-          }}
+        <LinearGradient
+          colors={['#fbbf24', '#f59e0b']}
+          start={{ x: 0.35, y: 0.35 }}
+          end={{ x: 1, y: 1 }}
+          style={{ width: 56, height: 56, borderRadius: 28 }}
         />
       </View>
-      <View className="flex-row justify-between mt-[6px]">
-        {['0', '15', '35', '75', '100+'].map((v) => (
-          <Text key={v} className="text-[9px] font-semibold" style={{ color: '#9b8cc5' }}>
-            {v}
-          </Text>
-        ))}
+
+      {/* PM scale */}
+      <View className="mb-3">
+        <View className="flex-row h-[6px] rounded-[3px] overflow-hidden relative">
+          <View className="flex-1 bg-good-2" />
+          <View className="flex-1 bg-warn" />
+          <View className="flex-1" style={{ backgroundColor: '#f97316' }} />
+          <View className="flex-1 bg-bad-2" />
+        </View>
+        <View className="relative">
+          <View
+            className="absolute w-[14px] h-[14px] rounded-full bg-white"
+            style={{
+              left: markerLeft,
+              marginLeft: -7,
+              top: -10,
+              borderWidth: 2,
+              borderColor: mainColor,
+            }}
+          />
+        </View>
+        <View className="flex-row justify-between mt-[6px]">
+          {['0', '15', '35', '75', '100+'].map((v) => (
+            <Text key={v} className="text-[9px] font-semibold" style={{ color: '#9b8cc5' }}>
+              {v}
+            </Text>
+          ))}
+        </View>
+      </View>
+
+      <View className="flex-row gap-2">
+        <MiniWeather icon="🌡" label="기온" value={`${temp}°`} />
+        <MiniWeather icon="💧" label="습도" value={`${humidity}%`} />
       </View>
     </View>
-
-    <View className="flex-row gap-2">
-      <MiniWeather icon="🌡" label="기온" value="18°" />
-      <MiniWeather icon="💧" label="습도" value="48%" />
-    </View>
-  </View>
-);
+  );
+};
 
 const MiniWeather = ({ icon, label, value }: { icon: string; label: string; value: string }) => (
   <View

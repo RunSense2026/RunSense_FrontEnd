@@ -1,8 +1,12 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
+import { fetchWeatherData, fetchAirQualityData } from '@/api';
+import { DEFAULT_LOCATION } from '@/constants/location';
+import type { WeatherItem } from '@/types/publicApi';
 import type { HomeScreenProps } from '@/types/navigation';
 
 // ═════════════════════════════════════════════════════════════
@@ -77,23 +81,104 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 };
 
 // ─── Air quality + weather card ──────────────────────────────────
-const AirWeatherCard = () => (
-  <View
-    className="rounded-[20px] p-[16px] mb-3"
-    style={{
-      backgroundColor: 'rgba(255,255,255,0.72)',
-      borderWidth: 0.5,
-      borderColor: 'rgba(124,58,237,0.14)',
-    }}
-  >
+const AirWeatherCard = () => {
+  const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
+  const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const getPublicData = async () => {
+      try {
+        // 상수로 분리된 위치 데이터를 사용합니다.
+        const [weather, air] = await Promise.all([
+          fetchWeatherData(DEFAULT_LOCATION.NX, DEFAULT_LOCATION.NY),
+          fetchAirQualityData(DEFAULT_LOCATION.STATION_NAME),
+        ]);
+
+        setWeatherItems(weather);
+
+        // 에어코리아 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따른 UI 매핑
+        if (air) {
+          const grade = air.pm25Grade || air.khaiGrade || '2';
+          let label = '보통';
+          let color = '#059669'; // 기본 색상 (초록)
+          let badgeBg = 'rgba(16,185,129,0.15)';
+
+          if (grade === '1') { label = '최고'; }
+          else if (grade === '2') { label = '야외 OK'; }
+          else if (grade === '3') { label = '주의'; color = '#f59e0b'; badgeBg = 'rgba(245,158,11,0.15)'; }
+          else if (grade === '4') { label = '야외 자제'; color = '#ef4444'; badgeBg = 'rgba(239,68,68,0.15)'; }
+
+          // 초미세먼지(PM2.5) 데이터가 통신 장애나 점검으로 인해 '-'로 올 경우 미세먼지(PM10) 데이터로 대체합니다.
+          let displayValue = air.pm25Value;
+          if (!displayValue || displayValue === '-') {
+            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
+          }
+
+          setAirData({
+            value: displayValue,
+            label,
+            color,
+            badgeBg,
+          });
+        }
+      } catch (error) {
+        setError('날씨/대기질 정보를 불러오지 못했습니다.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    getPublicData();
+  }, []);
+
+  // 로딩 중일 때 스켈레톤 UI 또는 ActivityIndicator 표시
+  if (loading) {
+    return (
+      <View className="rounded-[20px] p-[16px] mb-3 h-[230px] justify-center items-center" style={{ backgroundColor: 'rgba(255,255,255,0.72)' }}>
+        <ActivityIndicator color="#7c3aed" />
+        <Text className="text-[12px] font-medium mt-2" style={{ color: '#9b8cc5' }}>날씨 정보 로딩 중...</Text>
+      </View>
+    );
+  }
+
+  // 에러 발생 시 에러 메시지 표시
+  if (error) {
+    return (
+      <View className="rounded-[20px] p-[16px] mb-3 h-[230px] justify-center items-center" style={{ backgroundColor: 'rgba(255,255,255,0.72)' }}>
+        <Text className="text-[13px] font-medium" style={{ color: '#ef4444' }}>{error}</Text>
+      </View>
+    );
+  }
+
+  // 기온(T1H), 습도(REH), 풍속(WSD) 카테고리 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
+  const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
+  const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '45';
+  const wind = weatherItems.find((i) => i.category === 'WSD')?.obsrValue ?? '2';
+
+  // 대기질 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
+  const airValue = airData?.value ?? '32';
+  const airLabel = airData?.label ?? '야외 OK';
+  const airColor = airData?.color ?? '#059669';
+  const airBadgeBg = airData?.badgeBg ?? 'rgba(16,185,129,0.15)';
+
+  return (
+    <View
+      className="rounded-[20px] p-[16px] mb-3"
+      style={{
+        backgroundColor: 'rgba(255,255,255,0.72)',
+        borderWidth: 0.5,
+        borderColor: 'rgba(124,58,237,0.14)',
+      }}
+    >
     {/* 3, 4, 5번 영역: 지역, 온도, 날씨 및 아이콘 */}
     <View className="flex-row justify-between items-start">
       <View>
         <Text className="text-[12px] font-semibold" style={{ color: '#9b8cc5' }}>
-          서울 · 강남구
+          {DEFAULT_LOCATION.NAME}
         </Text>
         <View className="flex-row items-baseline gap-[8px] mt-[6px]">
-          <Text className="text-[44px] font-bold tracking-[-1.5px] leading-[50px]" style={{ color: '#1e1b4b' }}>18°</Text>
+          <Text className="text-[44px] font-bold tracking-[-1.5px] leading-[50px]" style={{ color: '#1e1b4b' }}>{temp}°</Text>
           <Text className="text-[14px] font-medium" style={{ color: '#9b8cc5' }}>맑음</Text>
         </View>
       </View>
@@ -123,14 +208,14 @@ const AirWeatherCard = () => (
         }}
       >
         <Text className="text-[11px] font-semibold" style={{ color: '#059669' }}>대기질</Text>
-        <Text className="text-[22px] font-bold mt-[2px]" style={{ color: '#065f46' }}>32</Text>
+        <Text className="text-[22px] font-bold mt-[2px]" style={{ color: airColor }}>{airValue}</Text>
         <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 ug/m2</Text>
         <View
           className="flex-row items-center gap-[4px] px-[10px] py-[4px] rounded-full mt-[6px]"
-          style={{ backgroundColor: 'rgba(16,185,129,0.15)' }}
+          style={{ backgroundColor: airBadgeBg }}
         >
-          <View className="w-[4px] h-[4px] rounded-full bg-[#059669]" />
-          <Text className="text-[9px] font-bold" style={{ color: '#047857' }}>야외 OK</Text>
+          <View className="w-[4px] h-[4px] rounded-full" style={{ backgroundColor: airColor }} />
+          <Text className="text-[9px] font-bold" style={{ color: airColor }}>{airLabel}</Text>
         </View>
       </View>
 
@@ -144,7 +229,7 @@ const AirWeatherCard = () => (
         }}
       >
         <Text className="text-[11px] font-semibold" style={{ color: '#9b8cc5' }}>습도</Text>
-        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>45%</Text>
+        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>{humidity}%</Text>
       </View>
 
       {/* 바람 카드 */}
@@ -157,11 +242,12 @@ const AirWeatherCard = () => (
         }}
       >
         <Text className="text-[11px] font-semibold" style={{ color: '#9b8cc5' }}>바람</Text>
-        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>2 m/s</Text>
+        <Text className="text-[18px] font-bold mt-[6px]" style={{ color: '#1e1b4b' }}>{wind} m/s</Text>
       </View>
     </View>
   </View>
-);
+  );
+};
 
 // ─── Course recommendation banner ────────────────────────────────
 const CourseBanner = ({ onPress }: { onPress: () => void }) => (
