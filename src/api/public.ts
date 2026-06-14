@@ -1,6 +1,41 @@
 import axios from 'axios';
 import { getEnvConfig } from '@/constants/env';
-import type { PublicApiResponse, WeatherItem, AirQualityItem, AirForecastItem } from '@/types/publicApi';
+import type { WeatherItem, AirQualityItem, AirForecastItem } from '@/types/publicApi';
+
+/** 역지오코딩 결과 — 표시용 지역명 + 대기질 측정소로 쓸 자치구명 */
+export interface GeoPlace {
+  /** 화면 표시용 (예: "서울 · 강남구") */
+  name: string;
+  /** 자치구/시군구명 (예: "강남구") — 에어코리아 측정소명으로 사용 */
+  gu: string;
+}
+
+const stripAdminSuffix = (s: string): string =>
+  s.replace(/(특별자치시|특별자치도|특별시|광역시)$/u, '').trim() || s;
+
+/**
+ * 위경도 → 한국 행정구역명 역지오코딩 (OpenStreetMap Nominatim, 키 불필요).
+ * 실패하면 null 을 반환하므로 호출부에서 기본 위치로 폴백한다.
+ */
+export const reverseGeocodeKo = async (lat: number, lon: number): Promise<GeoPlace | null> => {
+  const url =
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2` +
+    `&lat=${lat}&lon=${lon}&accept-language=ko&zoom=14`;
+
+  const res = await axios.get(url, {
+    timeout: 8000,
+    headers: { 'User-Agent': 'RunSense/1.0 (running app)' },
+  });
+
+  const a = res.data?.address;
+  if (!a) return null;
+
+  const gu = (a.city_district || a.borough || a.county || a.city || a.town || '').replace(/\s/g, '');
+  const si = stripAdminSuffix(a.city || a.province || a.state || a.region || '');
+  const name = [si, gu].filter(Boolean).join(' · ') || a.display_name?.split(',')[0]?.trim() || '현재 위치';
+
+  return { name, gu };
+};
 
 /** 기상청 날씨 데이터 조회 예시 */
 export const fetchWeatherData = async (

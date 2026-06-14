@@ -4,7 +4,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-import { fetchWeatherData, fetchAirQualityData } from '@/api';
+import { fetchWeatherData, fetchAirQualityData, reverseGeocodeKo } from '@/api';
+import { ensureLocationPermission, getCurrentPosition } from '@/utils/geo';
+import { latLonToGrid } from '@/utils/kmaGrid';
 import { DEFAULT_LOCATION } from '@/constants/location';
 import type { WeatherItem } from '@/types/publicApi';
 import type { HomeScreenProps } from '@/types/navigation';
@@ -35,7 +37,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         <ScrollView
           className="flex-1"
-          contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}
+          contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}
           showsVerticalScrollIndicator={false}
         >
           {/* Header */}
@@ -84,16 +86,37 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 const AirWeatherCard = () => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
   const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
+  const [locationName, setLocationName] = useState<string>(DEFAULT_LOCATION.NAME);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const getPublicData = async () => {
+      // 1) GPS 로 실제 위치 해석 → 기상청 격자/측정소/지역명. (실패 시 기본 위치로 폴백)
+      let nx: number = DEFAULT_LOCATION.NX;
+      let ny: number = DEFAULT_LOCATION.NY;
+      let station: string = DEFAULT_LOCATION.STATION_NAME;
       try {
-        // 상수로 분리된 위치 데이터를 사용합니다.
+        if (await ensureLocationPermission()) {
+          const { lat, lon } = await getCurrentPosition();
+          const grid = latLonToGrid(lat, lon);
+          nx = grid.nx;
+          ny = grid.ny;
+          const place = await reverseGeocodeKo(lat, lon).catch(() => null);
+          if (place) {
+            setLocationName(place.name);
+            if (place.gu) station = place.gu;
+          }
+        }
+      } catch {
+        // GPS/역지오코딩 실패 → 기본 위치(강남구)로 조회
+      }
+
+      // 2) 해석된 위치로 날씨/대기질 조회
+      try {
         const [weather, air] = await Promise.all([
-          fetchWeatherData(DEFAULT_LOCATION.NX, DEFAULT_LOCATION.NY),
-          fetchAirQualityData(DEFAULT_LOCATION.STATION_NAME),
+          fetchWeatherData(nx, ny),
+          fetchAirQualityData(station),
         ]);
 
         setWeatherItems(weather);
@@ -175,7 +198,7 @@ const AirWeatherCard = () => {
     <View className="flex-row justify-between items-start">
       <View>
         <Text className="text-[12px] font-semibold" style={{ color: '#9b8cc5' }}>
-          {DEFAULT_LOCATION.NAME}
+          {locationName}
         </Text>
         <View className="flex-row items-baseline gap-[8px] mt-[6px]">
           <Text className="text-[44px] font-bold tracking-[-1.5px] leading-[50px]" style={{ color: '#1e1b4b' }}>{temp}°</Text>
