@@ -1,7 +1,8 @@
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, Image } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
 
 import { cn } from '@/utils/cn';
+import runsenseLogo from '@/assets/runsense-logo.png';
 
 export type TabId = 'home' | 'run' | 'course' | 'log' | 'settings';
 
@@ -17,12 +18,9 @@ const HomeIcon = ({ color }: { color: string }) => (
     <Path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
   </Svg>
 );
-const RunIcon = ({ color }: { color: string }) => (
-  <Svg width={ICON} height={ICON} viewBox="0 0 24 24" fill="none">
-    <Circle cx={14} cy={4.5} r={1.6} stroke={color} strokeWidth={1.6} />
-    <Path d="M9 21l3-7-3-2 2-5 5 2 3 4" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M5 13l4-1" stroke={color} strokeWidth={1.6} strokeLinecap="round" />
-  </Svg>
+// 러닝 탭은 브랜드 로고로 표시 (풀컬러 — 활성/비활성 색 변화 없이 항상 강조)
+const RunIcon = () => (
+  <Image source={runsenseLogo} style={{ width: ICON, height: ICON }} resizeMode="contain" />
 );
 const MapIcon = ({ color }: { color: string }) => (
   <Svg width={ICON} height={ICON} viewBox="0 0 24 24" fill="none">

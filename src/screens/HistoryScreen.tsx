@@ -99,7 +99,7 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
     <LightShell>
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#7c3aed" />
         }

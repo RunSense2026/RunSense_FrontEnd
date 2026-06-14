@@ -36,7 +36,7 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
 
   return (
     <LightShell>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         <View className="pt-1 pb-[14px]">
           <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
             계정 & 환경

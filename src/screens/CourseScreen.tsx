@@ -14,7 +14,7 @@ import type { TabScreenProps } from '@/types/navigation';
 export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
   return (
     <LightShell>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         {/* Header */}
         <View className="flex-row justify-between items-start py-1 pb-[14px]">
           <View>
