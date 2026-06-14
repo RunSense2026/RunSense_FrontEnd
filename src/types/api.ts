@@ -111,7 +111,7 @@ export interface AiCoachingCreateRequestDto {
   recExercise: string;
 }
 
-/** 러닝 기록 생성 요청 — POST /api/run/save */
+/** 러닝 기록 생성 요청 — POST /api/run */
 export interface RunningActivityCreateRequestDto {
   /** 총 거리 (km) */
   distance: number;
@@ -142,7 +142,7 @@ export interface RunningActivityResponseDto {
   aiCoachingCount: number;
 }
 
-/** 모든 기간 러닝 기록 리스트 응답 — POST /api/run/readAll */
+/** 모든 기간 러닝 기록 리스트 응답 — GET /api/run */
 export interface RunningActivityListResponseDto {
   /** 전체 누적 거리 (km) */
   totalDistance: number;
@@ -180,7 +180,7 @@ export interface AiCoachingResponseDto {
   recExercise: string;
 }
 
-/** 러닝 기록 단건 상세 응답 — POST /api/run/read/{activityId} */
+/** 러닝 기록 단건 상세 응답 — GET /api/run/{activityId} */
 export interface RunningActivityDetailResponseDto {
   activityId: number;
   distance: number;

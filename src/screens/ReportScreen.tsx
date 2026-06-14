@@ -1,21 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { isAxiosError } from 'axios';
 import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
-import { LightShell, RSTabBar, type TabId } from '@/components/domain';
-import { saveRun, readRun } from '@/api';
+import { LightShell, RSTabBar, RSVoicePlayer, type TabId } from '@/components/domain';
+import { saveRun, readRun, readCoachingsByActivity, createCoaching, resolveVoiceUrl } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
   RunningActivityCreateRequestDto,
   RunningActivityDetailResponseDto,
   FootSensorDataResponseDto,
-  AiCoachingResponseDto,
 } from '@/types/api';
+import type { AiCoachingResultDto, AiCoachingRequestDto } from '@/types/aiApi';
 
+import { fmtPace, fmtTime, secToHms, spkToMinutes, spkToPace } from '@/utils/format';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
-import type { ScreenProps } from '@/types/navigation';
+import type { ScreenProps, RunSummaryParam } from '@/types/navigation';
 
 type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -24,6 +25,25 @@ const paceToSeconds = (pace: string): number => {
   const m = pace.match(/(\d+)'\s*(\d+)/);
   if (!m) return 0;
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
+
+// hitmapJson 문자열을 객체로 안전 파싱 (실패 시 null)
+const safeParseJson = (raw: string): Record<string, unknown> | null => {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+// 갓 뛴 리포트인데 세션 값이 없을 때 쓰는 목업 기본값. (실데이터 연동 시 이 한 곳만 교체)
+const MOCK_RUN = {
+  distanceKm: 5.24,
+  durationSec: 1722, // 28:42
+  paceSpk: 329, // ~5'29"
+  avgHeartRate: 154,
+  cadence: 178,
+  formScore: 84,
 };
 
 const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -46,9 +66,17 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
 
   // History 등에서 activityId 로 들어오면 해당 기록을 상세 조회한다.
   const activityId = route.params?.activityId;
+  // 러닝 종료 후 진입 시 전달된 실제 세션 값 (저장·코칭 입력에 사용)
+  const runSummary = route.params?.run;
   const [detail, setDetail] = useState<RunningActivityDetailResponseDto | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+
+  // AI 코칭은 별도 AI 서버에서 activityId 기준으로 조회한다. (실패해도 리포트 본문은 표시)
+  const [aiCoachings, setAiCoachings] = useState<AiCoachingResultDto[] | null>(null);
+  // 코칭 생성 시 받은 음성 파일 URL, 생성 진행 상태
+  const [voiceUri, setVoiceUri] = useState<string | null>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   useEffect(() => {
     if (activityId == null) return;
@@ -75,10 +103,30 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     };
   }, [activityId]);
 
-  // 상세 데이터가 있으면 그 값으로, 없으면(갓 뛴 리포트) 목업으로 표시한다.
+  useEffect(() => {
+    if (activityId == null) return;
+    let cancelled = false;
+    readCoachingsByActivity(activityId)
+      .then((list) => {
+        if (!cancelled) setAiCoachings(list);
+      })
+      .catch(() => {
+        // AI 서버 미응답 시 백엔드 코칭/목업으로 폴백하므로 조용히 무시한다.
+        if (!cancelled) setAiCoachings(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activityId]);
+
+  // 우선순위: 저장된 상세 → 갓 뛴 세션 값 → 목업(MOCK_RUN)
   const summary = detail
     ? { distance: detail.distance.toFixed(2), time: detail.time.replace(/^00:/, ''), pace: detail.pace }
-    : { distance: '5.24', time: '28:42', pace: `5'29"` };
+    : {
+        distance: (runSummary?.distanceKm ?? MOCK_RUN.distanceKm).toFixed(2),
+        time: fmtTime(runSummary?.durationSec ?? MOCK_RUN.durationSec),
+        pace: fmtPace(runSummary?.paceSpk ?? MOCK_RUN.paceSpk),
+      };
 
   const splits = detail
     ? detail.lapSplits
@@ -87,9 +135,36 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         .map((s) => ({ km: Number(s.lapNumber), pace: paceToSeconds(s.lapPace), label: s.lapPace }))
     : SPLITS;
 
+  // AI 서버 코칭이 있으면 우선 사용하고, 없으면 백엔드 러닝 상세의 코칭으로 폴백한다.
+  // (둘 다 없으면 CoachSummaryCard 내부 목업이 표시된다.)
+  const coachItems = toCoachItems(aiCoachings?.length ? aiCoachings : detail?.aiCoachings);
+
   const isViewingSaved = activityId != null;
 
-  const handleSave = async () => {
+  // 러닝 기록 저장 + AI 코칭/음성 생성을 한 번에 수행한다.
+  // silent=true 면 (러닝 종료 후 자동 진입 시) 성공 알림 없이 조용히 처리한다.
+  const runSaveAndCoaching = async ({ silent }: { silent: boolean }) => {
+    if (saveState !== 'idle') return;
+    setSaveState('saving');
+    try {
+      const payload = buildRunPayload(runSummary);
+      const result = await saveRun(payload);
+      setSaveState('saved');
+      // 저장된 러닝에 대해 AI 코칭(+음성)을 자동 생성한다. (실패해도 저장은 성공으로 본다)
+      void generateCoaching(result.activityId, payload);
+      if (!silent) Alert.alert('저장 완료', `러닝 기록이 저장되었어요. (#${result.activityId})`);
+    } catch (e) {
+      setSaveState('idle');
+      autoSavedRef.current = false; // 자동 저장 실패 시 수동 버튼으로 재시도 가능하게
+      const message = isAxiosError(e)
+        ? e.response?.data?.message ?? '러닝 기록 저장에 실패했어요.'
+        : '저장 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+      if (!silent) Alert.alert('저장 실패', message);
+    }
+  };
+
+  // 업로드 아이콘(수동 저장) — 비로그인 시 로그인 유도 후 저장+코칭 생성.
+  const handleSave = () => {
     if (saveState !== 'idle') return;
     if (!isAuthenticated) {
       Alert.alert('로그인이 필요해요', '러닝 기록을 저장하려면 먼저 로그인해주세요.', [
@@ -98,17 +173,32 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
       ]);
       return;
     }
-    setSaveState('saving');
+    void runSaveAndCoaching({ silent: false });
+  };
+
+  // 갓 뛴 리포트(activityId 없음)로 진입하면 — 러닝 종료 직후 — 기록을 자동 저장하고
+  // AI 코칭/음성을 생성한다. 로그인 상태에서 한 번만 실행한다. (비로그인 시 수동 버튼으로 유도)
+  const autoSavedRef = useRef(false);
+  useEffect(() => {
+    if (isViewingSaved) return;
+    if (autoSavedRef.current) return;
+    if (!isAuthenticated) return;
+    autoSavedRef.current = true;
+    void runSaveAndCoaching({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isViewingSaved, isAuthenticated]);
+
+  // 저장 직후 AI 서버에 코칭 생성을 요청하고, 결과 코칭 + 음성을 화면에 반영한다.
+  const generateCoaching = async (newActivityId: number, payload: RunningActivityCreateRequestDto) => {
+    setAiGenerating(true);
     try {
-      const result = await saveRun(buildRunPayload());
-      setSaveState('saved');
-      Alert.alert('저장 완료', `러닝 기록이 저장되었어요. (#${result.activityId})`);
-    } catch (e) {
-      setSaveState('idle');
-      const message = isAxiosError(e)
-        ? e.response?.data?.message ?? '러닝 기록 저장에 실패했어요.'
-        : '저장 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
-      Alert.alert('저장 실패', message);
+      const coaching = await createCoaching(buildCoachingPayload(newActivityId, payload, runSummary));
+      setAiCoachings([coaching]);
+      setVoiceUri(resolveVoiceUrl(coaching.voiceFile));
+    } catch {
+      // 코칭 생성 실패는 조용히 무시 — 본문은 목업/백엔드 코칭으로 폴백된다.
+    } finally {
+      setAiGenerating(false);
     }
   };
 
@@ -215,11 +305,11 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
           <Pronation footSensorData={detail?.footSensorData} />
         </ReportCard>
 
-        <CoachSummaryCard coachings={detail?.aiCoachings} />
+        <CoachSummaryCard coachings={coachItems} voiceUri={voiceUri} generating={aiGenerating} />
 
         <View className="flex-row gap-2 mt-3 flex-wrap">
-          <ReportMini label="평균 심박" value="154" unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
-          <ReportMini label="케이던스" value="178" unit="spm" trend="▲ 적정 범위" trendColor="#10b981" />
+          <ReportMini label="평균 심박" value={String(runSummary?.avgHeartRate ?? MOCK_RUN.avgHeartRate)} unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
+          <ReportMini label="케이던스" value={String(runSummary?.cadence ?? MOCK_RUN.cadence)} unit="spm" trend="▲ 적정 범위" trendColor="#10b981" />
           <ReportMini label="고도 변화" value="+24" unit="m" trend="평지 코스" trendColor="#7c3aed" />
           <ReportMini label="칼로리" value="312" unit="kcal" trend="목표 87%" trendColor="#7c3aed" />
         </View>
@@ -252,9 +342,9 @@ const IconBtn = ({
   </Pressable>
 );
 
-// 리포트 화면에 표시된 값으로 러닝 저장 요청 본문을 구성한다.
-// (현재 화면 데이터는 목업이라 표시값과 동일하게 매핑한다 — 실데이터 연동 시 이 함수만 교체)
-const buildRunPayload = (): RunningActivityCreateRequestDto => {
+// 러닝 저장 요청 본문을 구성한다. 실제 세션 값(run)이 있으면 상위 지표(거리·시간·페이스·폼)는
+// 그 값으로 채우고, 구간/발센서 등 세부 항목은 (아직 실데이터가 없어) 목업으로 둔다.
+const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto => {
   const minPace = Math.min(...SPLITS.map((s) => s.pace));
   const maxPace = Math.max(...SPLITS.map((s) => s.pace));
   const range = maxPace - minPace || 1;
@@ -266,10 +356,10 @@ const buildRunPayload = (): RunningActivityCreateRequestDto => {
   };
 
   return {
-    distance: 5.24,
-    time: '00:28:42',
-    pace: "5'29",
-    formScore: 84,
+    distance: run?.distanceKm ?? MOCK_RUN.distanceKm,
+    time: secToHms(run?.durationSec ?? MOCK_RUN.durationSec),
+    pace: spkToPace(run?.paceSpk ?? MOCK_RUN.paceSpk),
+    formScore: run?.formScore ?? MOCK_RUN.formScore,
     lapSplits: SPLITS.map((s) => ({
       lapNumber: s.km,
       lapPace: s.label.replace(/"/g, ''),
@@ -307,6 +397,26 @@ const buildRunPayload = (): RunningActivityCreateRequestDto => {
         recExercise: '카프 레이즈',
       },
     ],
+  };
+};
+
+// AI 코칭 생성 요청 본문을 구성한다. 실제 세션 값(summary)이 있으면 페이스·심박·케이던스를
+// 그 값으로, 없으면 저장 페이로드/목업 상수로 채운다. 발 센서는 저장 페이로드의 좌측 값을 사용.
+const buildCoachingPayload = (
+  activityId: number,
+  payload: RunningActivityCreateRequestDto,
+  summary?: RunSummaryParam,
+): AiCoachingRequestDto => {
+  const foot = payload.footSensorData[0];
+  return {
+    activityId,
+    pace: spkToMinutes(summary?.paceSpk ?? MOCK_RUN.paceSpk),
+    heartRate: summary?.avgHeartRate ?? MOCK_RUN.avgHeartRate,
+    cadence: summary?.cadence ?? MOCK_RUN.cadence,
+    footSide: foot?.footSide ?? null,
+    pronationType: foot?.pronationType ?? null,
+    heelStrikeRate: foot?.heelStrikeRate ?? null,
+    hitmapJson: foot ? safeParseJson(foot.hitmapJson) : null,
   };
 };
 
@@ -559,7 +669,34 @@ const PronationCard = ({ side, status, tone, tilt }: { side: string; status: str
   );
 };
 
-const CoachSummaryCard = ({ coachings }: { coachings?: AiCoachingResponseDto[] }) => (
+// 백엔드(러닝 상세)·AI 서버 코칭을 한 형태로 합쳐 카드에 넘기기 위한 정규화 타입
+interface CoachItem {
+  coachingId: number;
+  feedbackText: string;
+  focusPoint: string;
+  recExercise: string;
+}
+
+// 백엔드(focusPoint/recExercise 비-null)·AI 서버(nullable) 코칭을 CoachItem 으로 정규화한다.
+const toCoachItems = (
+  items?: { coachingId: number; feedbackText: string; focusPoint: string | null; recExercise: string | null }[],
+): CoachItem[] | undefined =>
+  items?.map((c) => ({
+    coachingId: c.coachingId,
+    feedbackText: c.feedbackText,
+    focusPoint: c.focusPoint ?? 'AI 코치 분석',
+    recExercise: c.recExercise ?? '',
+  }));
+
+const CoachSummaryCard = ({
+  coachings,
+  voiceUri,
+  generating,
+}: {
+  coachings?: CoachItem[];
+  voiceUri?: string | null;
+  generating?: boolean;
+}) => (
   <LinearGradient
     colors={['#7c3aed', '#6d28d9', '#3b82f6']}
     locations={[0, 0.5, 1]}
@@ -604,6 +741,17 @@ const CoachSummaryCard = ({ coachings }: { coachings?: AiCoachingResponseDto[] }
         </>
       )}
     </View>
+
+    {/* AI 음성 코칭 — 생성 중이면 안내, 완료되면 플레이어 표시 */}
+    {generating && (
+      <View className="flex-row items-center gap-2 mt-3">
+        <ActivityIndicator size="small" color="#ffffff" />
+        <Text className="text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.85)' }}>
+          AI 코치가 음성 분석을 만드는 중…
+        </Text>
+      </View>
+    )}
+    {!generating && voiceUri && <RSVoicePlayer uri={voiceUri} />}
   </LinearGradient>
 );
 

@@ -43,3 +43,18 @@ export const fmtTime = (seconds: number): string => {
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return `${m}:${String(s).padStart(2, '0')}`;
 };
+
+// 초 → "HH:MM:SS" (백엔드 time 필드 등 0-패딩 포맷). fmtTime 과 달리 항상 시·분·초를 채운다.
+export const secToHms = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+};
+
+// 초/km → 분 단위 실수 (AI 서버 pace 필드용, 예: 329 → 5.48)
+export const spkToMinutes = (spk: number): number =>
+  spk > 0 ? Math.round((spk / 60) * 100) / 100 : 0;
+
+// 초/km → "M'SS" (백엔드 pace 필드 포맷 — fmtPace 에서 따옴표만 제거)
+export const spkToPace = (spk: number): string => fmtPace(spk).replace(/"/g, '');
