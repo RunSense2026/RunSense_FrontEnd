@@ -3,6 +3,7 @@ import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
 import { LightShell } from '@/components/domain';
+import { useWeeklyGoalStore } from '@/stores/weeklyGoalStore';
 import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
@@ -10,9 +11,15 @@ import type { ScreenProps } from '@/types/navigation';
 type Preset = 'light' | 'balanced' | 'ambitious';
 
 export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSetup'>) => {
+  const { targetKm, daysPerWeek, setGoal } = useWeeklyGoalStore();
   const [preset, setPreset] = useState<Preset>('balanced');
-  const [days, setDays] = useState(4);
-  const [km, setKm] = useState(20);
+  const [days, setDays] = useState(daysPerWeek);
+  const [km, setKm] = useState(targetKm);
+
+  const handleComplete = () => {
+    setGoal({ targetKm: km, daysPerWeek: days });
+    navigation.goBack();
+  };
 
   const handlePresetSelect = (p: Preset) => {
     setPreset(p);
@@ -276,7 +283,7 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
           </View>
         </CardWhite>
 
-        <Pressable onPress={() => navigation.goBack()} className="mt-1">
+        <Pressable onPress={handleComplete} className="mt-1">
           <LinearGradient
             colors={gradients.action}
             start={{ x: 0, y: 0 }}

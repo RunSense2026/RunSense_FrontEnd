@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import { isAxiosError } from 'axios';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 import { LightShell } from '@/components/domain';
 import { readAllRuns, readRunsByDate } from '@/api';
@@ -14,8 +14,16 @@ import type { RunningActivityListResponseDto } from '@/types/api';
 import type { TabScreenProps } from '@/types/navigation';
 
 type Period = 'week' | 'month' | 'all';
+type SortKey = 'latest' | 'oldest' | 'distance';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const SORT_LABELS: Record<SortKey, string> = { latest: '최신순', oldest: '오래된 순', distance: '거리순' };
+
+// "2026-05-23T..." → "5월 23일"
+const fmtMonthDay = (iso: string | number | Date): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '-' : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+};
 
 // "2026-05-23T19:12:37" → { date: "5월 3일", weekday: "일", ts }
 const formatActivityDate = (iso: string) => {
@@ -45,21 +53,20 @@ const periodRange = (period: Period): { startDate: string; endDate: string } => 
 
 export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
   const [period, setPeriod] = useState<Period>('all');
+  const [sort, setSort] = useState<SortKey>('latest');
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [data, setData] = useState<RunningActivityListResponseDto | null>(null);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // period 에 따라 전체(GET /api/run) 또는 기간(GET /api/run/date) 조회
-  const load = useCallback(async (isRefresh = false) => {
+  const load = useCallback(async () => {
     if (!isAuthenticated) {
       setError('러닝 기록을 보려면 로그인해주세요.');
       setData(null);
       return;
     }
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    setLoading(true);
     setError(null);
     try {
       let result: RunningActivityListResponseDto;
@@ -77,7 +84,6 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
       setError(message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [isAuthenticated, period]);
 
@@ -88,43 +94,38 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
     }, [load]),
   );
 
-  // 서버가 기간 필터링을 하므로 클라이언트는 최신순 정렬만 한다.
-  const activities = (data?.activities ?? [])
-    .slice()
-    .sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime());
+  // 서버가 기간 필터링을 하므로 클라이언트는 선택한 정렬만 적용한다.
+  const activities = (data?.activities ?? []).slice().sort((a, b) => {
+    if (sort === 'distance') return b.distance - a.distance;
+    const diff = new Date(a.activityDate).getTime() - new Date(b.activityDate).getTime();
+    return sort === 'oldest' ? diff : -diff;
+  });
 
   const periodLabel = period === 'week' ? '최근 7일' : period === 'month' ? '최근 30일' : '전체';
+
+  // 헤더 날짜 범위 (주간/월간은 기간, 전체는 실제 기록 범위)
+  const headerDate = (() => {
+    if (period === 'week' || period === 'month') {
+      const { startDate, endDate } = periodRange(period);
+      return `${fmtMonthDay(startDate)} — ${fmtMonthDay(endDate)}`;
+    }
+    if (activities.length === 0) return '전체 기록';
+    const times = activities.map((a) => new Date(a.activityDate).getTime());
+    return `${fmtMonthDay(Math.min(...times))} — ${fmtMonthDay(Math.max(...times))}`;
+  })();
 
   return (
     <LightShell>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#7c3aed" />
-        }
       >
         {/* Header */}
-        <View className="flex-row justify-between items-start pt-1 pb-[14px]">
-          <View>
-            <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              4월 28일 — 5월 4일
-            </Text>
-            <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>러닝 기록</Text>
-          </View>
-          <View className="flex-row gap-2">
-            <HIconBtn>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Rect x={3} y={4} width={18} height={18} rx={2} stroke="#7c3aed" strokeWidth={2} />
-                <Path d="M16 2v4M8 2v4M3 10h18" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            </HIconBtn>
-            <HIconBtn>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Path d="M3 6h18M6 12h12M10 18h4" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            </HIconBtn>
-          </View>
+        <View className="pt-1 pb-[14px]">
+          <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
+            {headerDate}
+          </Text>
+          <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>러닝 기록</Text>
         </View>
 
         {/* Period tabs */}
@@ -176,7 +177,7 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
             <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>러닝 목록</Text>
             <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>{activities.length}건</Text>
           </View>
-          <Text className="text-[11px] text-purple-500 font-semibold">최신순 ▾</Text>
+          <SortDropdown value={sort} onChange={setSort} />
         </View>
 
         {/* Run list */}
@@ -226,18 +227,57 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
   );
 };
 
-const HIconBtn = ({ children }: { children: React.ReactNode }) => (
-  <Pressable
-    className="w-9 h-9 rounded-[12px] items-center justify-center"
-    style={{
-      backgroundColor: 'rgba(255,255,255,0.7)',
-      borderWidth: 0.5,
-      borderColor: 'rgba(124,58,237,0.14)',
-    }}
-  >
-    {children}
-  </Pressable>
-);
+// 정렬 드롭다운 — 최신순 / 오래된 순 / 거리순
+const SortDropdown = ({ value, onChange }: { value: SortKey; onChange: (s: SortKey) => void }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ position: 'relative', zIndex: 20 }}>
+      <Pressable onPress={() => setOpen((o) => !o)} className="flex-row items-center gap-[2px]" hitSlop={8}>
+        <Text className="text-[11px] text-purple-500 font-semibold">{SORT_LABELS[value]}</Text>
+        <Text className="text-[9px] text-purple-500">▾</Text>
+      </Pressable>
+      {open && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 22,
+            right: 0,
+            minWidth: 96,
+            backgroundColor: '#ffffff',
+            borderRadius: 12,
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.18)',
+            paddingVertical: 4,
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            zIndex: 30,
+          }}
+        >
+          {(['latest', 'oldest', 'distance'] as SortKey[]).map((k) => (
+            <Pressable
+              key={k}
+              onPress={() => {
+                onChange(k);
+                setOpen(false);
+              }}
+              className="px-3 py-[7px]"
+            >
+              <Text
+                className="text-[12px] font-semibold"
+                style={{ color: k === value ? '#7c3aed' : '#6b5ca5' }}
+              >
+                {SORT_LABELS[k]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
 
 const HSummaryCard = ({
   label,

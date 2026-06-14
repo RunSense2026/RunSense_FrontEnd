@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-import { fetchWeatherData, fetchAirQualityData, reverseGeocodeKo } from '@/api';
+import { fetchWeatherData, fetchAirQualityData, reverseGeocodeKo, readAllRuns, readRunsByDate } from '@/api';
 import { ensureLocationPermission, getCurrentPosition } from '@/utils/geo';
 import { latLonToGrid } from '@/utils/kmaGrid';
+import { useAuthStore } from '@/stores/authStore';
+import { useWeeklyGoalStore } from '@/stores/weeklyGoalStore';
 import { DEFAULT_LOCATION } from '@/constants/location';
 import type { WeatherItem } from '@/types/publicApi';
+import type { RunningActivityResponseDto } from '@/types/api';
 import type { HomeScreenProps } from '@/types/navigation';
 
 // ═════════════════════════════════════════════════════════════
@@ -16,6 +20,7 @@ import type { HomeScreenProps } from '@/types/navigation';
 // Ported from home-screen.jsx
 // ═════════════════════════════════════════════════════════════
 export const HomeScreen = ({ navigation }: HomeScreenProps) => {
+  const userName = useAuthStore((s) => s.userName);
   return (
     <View className="flex-1 bg-[#f6f3ff]">
       <LinearGradient
@@ -54,7 +59,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
               end={{ x: 1, y: 1 }}
               style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text className="text-white font-bold text-[14px]">진우</Text>
+              <Text className="text-white font-bold text-[14px]" numberOfLines={1}>{userName ?? '게스트'}</Text>
             </LinearGradient>
           </View>
 
@@ -72,10 +77,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
             </Pressable>
           </View>
 
-          <RecentRunCard date="오늘" weekday="월" featured dist="5.24" time="28:42" pace="5'29&quot;" form={84} hr={154} />
-          <RecentRunCard date="4월 12일" weekday="토" dist="5.20" time="28:42" pace="5'31&quot;" form={82} hr={152} />
-          <RecentRunCard date="4월 10일" weekday="목" dist="3.80" time="22:04" pace="5'48&quot;" form={78} hr={148} />
-          <RecentRunCard date="4월 8일" weekday="화" dist="5.00" time="27:30" pace="5'30&quot;" form={80} hr={150} />
+          <RecentRunsList navigation={navigation} />
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -311,11 +313,53 @@ const CourseBanner = ({ onPress }: { onPress: () => void }) => (
 );
 
 // ─── Weekly goal card ────────────────────────────────────────────
+// Date → "YYYY-MM-DD"
+const toYMD = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
-  const pct = 0.62;
+  const targetKm = useWeeklyGoalStore((s) => s.targetKm);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [doneKm, setDoneKm] = useState(0);
+  const [ranDays, setRanDays] = useState<boolean[]>([false, false, false, false, false, false, false]);
+
   const days = ['월', '화', '수', '목', '금', '토', '일'] as const;
-  const done = [true, true, false, true, false, true, false];
-  const todayIdx = 3;
+  const todayIdx = (new Date().getDay() + 6) % 7; // 월=0 … 일=6
+
+  // 이번 주(월~오늘) 러닝 합계·요일을 백엔드에서 가져온다.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) {
+        setDoneKm(0);
+        setRanDays([false, false, false, false, false, false, false]);
+        return;
+      }
+      let cancelled = false;
+      const today = new Date();
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      readRunsByDate(toYMD(weekStart), toYMD(today))
+        .then((res) => {
+          if (cancelled) return;
+          let sum = 0;
+          const ran = [false, false, false, false, false, false, false];
+          res.activities.forEach((a) => {
+            sum += a.distance;
+            const idx = (new Date(a.activityDate).getDay() + 6) % 7;
+            ran[idx] = true;
+          });
+          setDoneKm(sum);
+          setRanDays(ran);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated]),
+  );
+
+  const pct = targetKm > 0 ? Math.min(1, doneKm / targetKm) : 0;
+  const remaining = Math.max(0, targetKm - doneKm);
 
   return (
     <Pressable
@@ -333,13 +377,13 @@ const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
             이번 주 목표
           </Text>
           <View className="flex-row items-baseline gap-1 mt-1">
-            <Text className="text-[22px] font-bold tracking-[-0.66px] leading-[28px]" style={{ color: '#1e1b4b' }}>12.4</Text>
-            <Text className="text-[12px] font-medium" style={{ color: '#9b8cc5' }}>/ 20 km</Text>
+            <Text className="text-[22px] font-bold tracking-[-0.66px] leading-[28px]" style={{ color: '#1e1b4b' }}>{doneKm.toFixed(1)}</Text>
+            <Text className="text-[12px] font-medium" style={{ color: '#9b8cc5' }}>/ {targetKm} km</Text>
           </View>
         </View>
         <View className="items-end">
-          <Text className="text-[22px] font-bold text-purple-500 tracking-[-0.44px] leading-[28px]">62%</Text>
-          <Text className="text-[10px] font-semibold mt-[3px]" style={{ color: '#9b8cc5' }}>7.6 km 남음</Text>
+          <Text className="text-[22px] font-bold text-purple-500 tracking-[-0.44px] leading-[28px]">{Math.round(pct * 100)}%</Text>
+          <Text className="text-[10px] font-semibold mt-[3px]" style={{ color: '#9b8cc5' }}>{remaining.toFixed(1)} km 남음</Text>
         </View>
       </View>
 
@@ -359,7 +403,7 @@ const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
       {/* 7-day dots */}
       <View className="flex-row justify-between mt-3">
         {days.map((d, i) => {
-          const isDone = done[i];
+          const isDone = ranDays[i];
           const isToday = i === todayIdx;
           return (
             <View key={d} className="items-center gap-1">
@@ -398,6 +442,105 @@ const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
   );
 };
 
+// ─── Recent runs (실데이터, 최신 5개) ─────────────────────────────
+const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+// "2026-06-14T07:14:00" → "오늘" / "어제" / "6월 14일"
+const formatRunDate = (iso: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const today = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(today) - startOf(d)) / 86400000);
+  if (diffDays === 0) return '오늘';
+  if (diffDays === 1) return '어제';
+  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+};
+
+const weekdayOf = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : KO_WEEKDAYS[d.getDay()];
+};
+
+const RecentRunsList = ({ navigation }: { navigation: HomeScreenProps['navigation'] }) => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [runs, setRuns] = useState<RunningActivityResponseDto[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // 홈으로 돌아올 때마다 갱신 (새 러닝 저장 후 반영)
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) {
+        setRuns(null);
+        return;
+      }
+      let cancelled = false;
+      setLoading(true);
+      readAllRuns()
+        .then((res) => {
+          if (cancelled) return;
+          const latest = res.activities
+            .slice()
+            .sort((a, b) => new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime())
+            .slice(0, 5);
+          setRuns(latest);
+        })
+        .catch(() => {
+          if (!cancelled) setRuns([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated]),
+  );
+
+  if (!isAuthenticated) return <EmptyRuns message="로그인하면 러닝 기록이 표시돼요." />;
+  if (loading && !runs) {
+    return (
+      <View className="py-7 items-center">
+        <ActivityIndicator color="#7c3aed" />
+      </View>
+    );
+  }
+  if (!runs || runs.length === 0) {
+    return <EmptyRuns message="아직 러닝 기록이 없어요. 첫 러닝을 시작해보세요!" />;
+  }
+
+  return (
+    <>
+      {runs.map((r, i) => (
+        <RecentRunCard
+          key={r.activityId}
+          featured={i === 0}
+          date={formatRunDate(r.activityDate)}
+          weekday={weekdayOf(r.activityDate)}
+          dist={r.distance.toFixed(2)}
+          time={r.time.replace(/^00:/, '')}
+          pace={r.pace}
+          form={r.formScore}
+          onPress={() => navigation.navigate('Report', { activityId: r.activityId })}
+        />
+      ))}
+    </>
+  );
+};
+
+const EmptyRuns = ({ message }: { message: string }) => (
+  <View
+    className="rounded-[16px] py-7 px-4 items-center"
+    style={{
+      backgroundColor: 'rgba(255,255,255,0.6)',
+      borderWidth: 0.5,
+      borderColor: 'rgba(124,58,237,0.1)',
+    }}
+  >
+    <Text className="text-[12px] font-medium text-center" style={{ color: '#9b8cc5' }}>{message}</Text>
+  </View>
+);
+
 // ─── Recent run card ─────────────────────────────────────────────
 interface RecentRunCardProps {
   date: string;
@@ -406,11 +549,12 @@ interface RecentRunCardProps {
   time: string;
   pace: string;
   form: number;
-  hr: number;
+  hr?: number;
   featured?: boolean;
+  onPress?: () => void;
 }
 
-const RecentRunCard = ({ date, weekday, dist, time, pace, form, hr, featured }: RecentRunCardProps) => {
+const RecentRunCard = ({ date, weekday, dist, time, pace, form, hr, featured, onPress }: RecentRunCardProps) => {
   const body = (
     <>
       <View className="flex-row justify-between items-center mb-[10px]">
@@ -456,41 +600,41 @@ const RecentRunCard = ({ date, weekday, dist, time, pace, form, hr, featured }: 
       <View className="flex-row gap-[6px]">
         <RunMini label="페이스" value={pace} />
         <RunMini label="폼" value={String(form)} accent={form >= 80 ? '#10b981' : '#f59e0b'} />
-        <RunMini label="평균 심박" value={String(hr)} unit="bpm" />
+        {hr != null && <RunMini label="평균 심박" value={String(hr)} unit="bpm" />}
       </View>
     </>
   );
 
-  if (featured) {
-    return (
-      <LinearGradient
-        colors={['rgba(124,58,237,0.06)', 'rgba(59,130,246,0.04)']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          borderRadius: 16,
-          padding: 14,
-          marginBottom: 8,
-          borderWidth: 1,
-          borderColor: 'rgba(124,58,237,0.22)',
-        }}
-      >
-        {body}
-      </LinearGradient>
-    );
-  }
-
   return (
-    <View
-      className="rounded-[16px] p-[14px] mb-2"
-      style={{
-        backgroundColor: 'rgba(255,255,255,0.72)',
-        borderWidth: 0.5,
-        borderColor: 'rgba(124,58,237,0.1)',
-      }}
-    >
-      {body}
-    </View>
+    <Pressable onPress={onPress} disabled={!onPress}>
+      {featured ? (
+        <LinearGradient
+          colors={['rgba(124,58,237,0.06)', 'rgba(59,130,246,0.04)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            borderRadius: 16,
+            padding: 14,
+            marginBottom: 8,
+            borderWidth: 1,
+            borderColor: 'rgba(124,58,237,0.22)',
+          }}
+        >
+          {body}
+        </LinearGradient>
+      ) : (
+        <View
+          className="rounded-[16px] p-[14px] mb-2"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.72)',
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.1)',
+          }}
+        >
+          {body}
+        </View>
+      )}
+    </Pressable>
   );
 };
 
