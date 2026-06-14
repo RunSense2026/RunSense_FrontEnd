@@ -1,19 +1,21 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, ActivityIndicator, Image } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { isAxiosError } from 'axios';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 
 import { AuthShell, AEField } from '@/components/domain';
 import { login } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { gradients } from '@/theme/tokens';
+import runsenseLogo from '@/assets/runsense-logo.png';
 
 import type { ScreenProps } from '@/types/navigation';
 
 export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
   const [email, setEmail] = useState('');
   const [pwd, setPwd] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [focus, setFocus] = useState<'email' | 'pwd' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,10 +85,11 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
             value={pwd}
             onChangeText={setPwd}
             placeholder="••••••••"
-            secureTextEntry
+            secureTextEntry={!showPwd}
             focused={focus === 'pwd'}
             onFocus={() => setFocus('pwd')}
             onBlur={() => setFocus(null)}
+            right={<PwdToggle visible={showPwd} onToggle={() => setShowPwd((v) => !v)} />}
           />
           <Pressable
             onPress={() => navigation.navigate('FindAccount')}
@@ -132,19 +135,59 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
   );
 };
 
+// 비밀번호 표시/숨김 토글 버튼 — AEField 의 right 슬롯에 들어간다.
+const PwdToggle = ({ visible, onToggle }: { visible: boolean; onToggle: () => void }) => (
+  <Pressable
+    onPress={onToggle}
+    hitSlop={8}
+    accessibilityRole="button"
+    accessibilityLabel={visible ? '비밀번호 숨기기' : '비밀번호 표시'}
+    className="w-8 h-8 items-center justify-center"
+  >
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      {visible ? (
+        // eye (보임)
+        <>
+          <Path
+            d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
+            stroke="#a78bfa"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Circle cx={12} cy={12} r={3} stroke="#a78bfa" strokeWidth={1.8} />
+        </>
+      ) : (
+        // eye-off (숨김)
+        <>
+          <Path
+            d="M9.9 5.1A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-2.4 3.3M6.5 7A16.8 16.8 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 3.6-.7"
+            stroke="rgba(167,139,250,0.85)"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M9.9 9.9a3 3 0 0 0 4.2 4.2"
+            stroke="rgba(167,139,250,0.85)"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Line x1={3} y1={3} x2={21} y2={21} stroke="rgba(167,139,250,0.85)" strokeWidth={1.8} strokeLinecap="round" />
+        </>
+      )}
+    </Svg>
+  </Pressable>
+);
+
 const RSLogo = () => (
   <View className="flex-row items-center gap-[10px]">
-    <LinearGradient
-      colors={gradients.action}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-        <Circle cx={14} cy={4.5} r={1.6} fill="#fff" />
-        <Path d="M9 21l3-7-3-2 2-5 5 2 3 4" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-      </Svg>
-    </LinearGradient>
+    <Image
+      source={runsenseLogo}
+      style={{ width: 40, height: 40, borderRadius: 12 }}
+      resizeMode="contain"
+    />
     <Text className="text-[22px] font-bold text-white tracking-[-0.44px]">RunSense</Text>
   </View>
 );
