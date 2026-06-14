@@ -11,7 +11,23 @@ import { DEFAULT_LOCATION } from '@/constants/location';
 import type { WeatherItem } from '@/types/publicApi';
 import type { TabScreenProps } from '@/types/navigation';
 
+type CourseSort = 'score' | 'name';
+const COURSE_SORT_LABELS: Record<CourseSort, string> = { score: '추천순', name: '이름순' };
+
+const COURSES = [
+  { name: '한강공원 합정 산책로', desc: '강변 따라 평탄한 직선 코스, 공기 흐름 좋음', score: 94 },
+  { name: '망원동 골목 코스', desc: '조용한 주택가 도심 러닝, 신호 적음', score: 82 },
+  { name: '월드컵공원 둘레길', desc: '언덕 구간 포함 인터벌 추천, 흙길 일부', score: 76 },
+];
+
 export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [courseSort, setCourseSort] = useState<CourseSort>('score');
+  const maxScore = Math.max(...COURSES.map((c) => c.score));
+  const sortedCourses = [...COURSES].sort((a, b) =>
+    courseSort === 'name' ? a.name.localeCompare(b.name) : b.score - a.score,
+  );
+
   return (
     <LightShell>
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
@@ -26,6 +42,7 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
             </Text>
           </View>
           <Pressable
+            onPress={() => setRefreshKey((k) => k + 1)}
             className="w-9 h-9 rounded-[12px] items-center justify-center"
             style={{
               backgroundColor: 'rgba(255,255,255,0.7)',
@@ -40,43 +57,88 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
           </Pressable>
         </View>
 
-        <AirQualityCard />
+        <AirQualityCard refreshKey={refreshKey} />
         <MapCard />
 
-        <View className="flex-row justify-between items-baseline mt-[18px] mb-[10px]">
+        <View className="flex-row justify-between items-baseline mt-[18px] mb-[10px]" style={{ zIndex: 20 }}>
           <View className="flex-row items-baseline gap-[6px]">
             <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>추천 코스</Text>
-            <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>3개</Text>
+            <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>{sortedCourses.length}개</Text>
           </View>
-          <Text className="text-[11px] text-purple-500 font-semibold">거리순 ▾</Text>
+          <CourseSortDropdown value={courseSort} onChange={setCourseSort} />
         </View>
 
-        <CourseCard
-          rank={1}
-          name="한강공원 합정 산책로"
-          desc="강변 따라 평탄한 직선 코스, 공기 흐름 좋음"
-          score={94}
-          best
-        />
-        <CourseCard
-          rank={2}
-          name="망원동 골목 코스"
-          desc="조용한 주택가 도심 러닝, 신호 적음"
-          score={82}
-        />
-        <CourseCard
-          rank={3}
-          name="월드컵공원 둘레길"
-          desc="언덕 구간 포함 인터벌 추천, 흙길 일부"
-          score={76}
-        />
+        {sortedCourses.map((c, i) => (
+          <CourseCard
+            key={c.name}
+            rank={i + 1}
+            name={c.name}
+            desc={c.desc}
+            score={c.score}
+            best={c.score === maxScore}
+          />
+        ))}
 
       </ScrollView>
     </LightShell>
   );
 };
 
-const AirQualityCard = () => {
+// 코스 정렬 드롭다운 — 추천순(점수) / 이름순
+const CourseSortDropdown = ({
+  value,
+  onChange,
+}: {
+  value: CourseSort;
+  onChange: (s: CourseSort) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ position: 'relative', zIndex: 30 }}>
+      <Pressable onPress={() => setOpen((o) => !o)} className="flex-row items-center gap-[2px]" hitSlop={8}>
+        <Text className="text-[11px] text-purple-500 font-semibold">{COURSE_SORT_LABELS[value]}</Text>
+        <Text className="text-[9px] text-purple-500">▾</Text>
+      </Pressable>
+      {open && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 22,
+            right: 0,
+            minWidth: 92,
+            backgroundColor: '#ffffff',
+            borderRadius: 12,
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.18)',
+            paddingVertical: 4,
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+          }}
+        >
+          {(['score', 'name'] as CourseSort[]).map((k) => (
+            <Pressable
+              key={k}
+              onPress={() => {
+                onChange(k);
+                setOpen(false);
+              }}
+              className="px-3 py-[7px]"
+            >
+              <Text className="text-[12px] font-semibold" style={{ color: k === value ? '#7c3aed' : '#6b5ca5' }}>
+                {COURSE_SORT_LABELS[k]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
+
+const AirQualityCard = ({ refreshKey }: { refreshKey: number }) => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
   const [airData, setAirData] = useState<{ value: string; label: string; grade: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +146,8 @@ const AirQualityCard = () => {
 
   useEffect(() => {
     const getCourseData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const [weather, air] = await Promise.all([
           fetchWeatherData(DEFAULT_LOCATION.NX, DEFAULT_LOCATION.NY),
@@ -115,7 +179,7 @@ const AirQualityCard = () => {
     };
 
     getCourseData();
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     return (

@@ -11,13 +11,17 @@ import type { ScreenProps } from '@/types/navigation';
 type Preset = 'light' | 'balanced' | 'ambitious';
 
 export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSetup'>) => {
-  const { targetKm, daysPerWeek, setGoal } = useWeeklyGoalStore();
+  const { targetKm, daysPerWeek, preferredDays, setGoal } = useWeeklyGoalStore();
   const [preset, setPreset] = useState<Preset>('balanced');
   const [days, setDays] = useState(daysPerWeek);
   const [km, setKm] = useState(targetKm);
+  const [prefDays, setPrefDays] = useState<boolean[]>(preferredDays);
+
+  const togglePrefDay = (i: number) =>
+    setPrefDays((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
 
   const handleComplete = () => {
-    setGoal({ targetKm: km, daysPerWeek: days });
+    setGoal({ targetKm: km, daysPerWeek: days, preferredDays: prefDays });
     navigation.goBack();
   };
 
@@ -252,23 +256,25 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
           </Text>
           <View className="flex-row justify-between">
             {['월', '화', '수', '목', '금', '토', '일'].map((d, i) => {
-              const sel = [true, false, true, true, false, true, false][i];
+              const sel = prefDays[i];
               if (sel) {
                 return (
-                  <LinearGradient
-                    key={d}
-                    colors={gradients.action}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    <Text className="text-white text-[12px] font-bold">{d}</Text>
-                  </LinearGradient>
+                  <Pressable key={d} onPress={() => togglePrefDay(i)}>
+                    <LinearGradient
+                      colors={gradients.action}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={{ width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Text className="text-white text-[12px] font-bold">{d}</Text>
+                    </LinearGradient>
+                  </Pressable>
                 );
               }
               return (
-                <View
+                <Pressable
                   key={d}
+                  onPress={() => togglePrefDay(i)}
                   className="w-8 h-8 rounded-[10px] items-center justify-center"
                   style={{
                     backgroundColor: 'rgba(124,58,237,0.06)',
@@ -277,7 +283,7 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
                   }}
                 >
                   <Text className="text-[12px] font-bold" style={{ color: '#9b8cc5' }}>{d}</Text>
-                </View>
+                </Pressable>
               );
             })}
           </View>

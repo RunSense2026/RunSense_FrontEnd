@@ -7,11 +7,14 @@ interface WeeklyGoalState {
   targetKm: number;
   /** 주간 목표 러닝 횟수 */
   daysPerWeek: number;
-  setGoal: (goal: { targetKm: number; daysPerWeek: number }) => void;
+  /** 선호 요일 (월~일, 7개) */
+  preferredDays: boolean[];
+  setGoal: (goal: { targetKm: number; daysPerWeek: number; preferredDays: boolean[] }) => void;
 }
 
 export const useWeeklyGoalStore = create<WeeklyGoalState>((set) => ({
   targetKm: 20,
   daysPerWeek: 4,
+  preferredDays: [true, false, true, true, false, true, false],
   setGoal: (goal) => set(goal),
 }));

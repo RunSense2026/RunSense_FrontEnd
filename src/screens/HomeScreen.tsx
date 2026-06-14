@@ -19,6 +19,32 @@ import type { HomeScreenProps } from '@/types/navigation';
 // HOME SCREEN — Light theme, purple+blue accents
 // Ported from home-screen.jsx
 // ═════════════════════════════════════════════════════════════
+// 현재 시각으로 아침/오후/저녁/밤 인사말
+const getGreeting = (): string => {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return '좋은 아침이에요 ☀️';
+  if (h >= 12 && h < 18) return '좋은 오후예요 🌤️';
+  if (h >= 18 && h < 22) return '좋은 저녁이에요 🌙';
+  return '편안한 밤이에요 🌙';
+};
+
+// 기상청 PTY(강수형태) 코드 → 날씨 라벨 (0/없음: 맑음)
+const ptyLabel = (pty?: string): string => {
+  switch (pty) {
+    case '1':
+    case '5':
+      return '비';
+    case '2':
+    case '6':
+      return '비/눈';
+    case '3':
+    case '7':
+      return '눈';
+    default:
+      return '맑음';
+  }
+};
+
 export const HomeScreen = ({ navigation }: HomeScreenProps) => {
   const userName = useAuthStore((s) => s.userName);
   return (
@@ -48,7 +74,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
           {/* Header */}
           <View className="flex-row justify-between items-center pt-[6px] pb-[14px]">
             <View>
-              <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>좋은 아침이에요 ☀️</Text>
+              <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>{getGreeting()}</Text>
               <Text className="text-[24px] font-bold mt-[2px] tracking-[-0.72px]" style={{ color: '#1e1b4b' }}>
                 오늘도 뛰어볼까요?
               </Text>
@@ -180,6 +206,7 @@ const AirWeatherCard = () => {
   const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
   const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '45';
   const wind = weatherItems.find((i) => i.category === 'WSD')?.obsrValue ?? '2';
+  const sky = ptyLabel(weatherItems.find((i) => i.category === 'PTY')?.obsrValue);
 
   // 대기질 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
   const airValue = airData?.value ?? '32';
@@ -204,7 +231,7 @@ const AirWeatherCard = () => {
         </Text>
         <View className="flex-row items-baseline gap-[8px] mt-[6px]">
           <Text className="text-[44px] font-bold tracking-[-1.5px] leading-[50px]" style={{ color: '#1e1b4b' }}>{temp}°</Text>
-          <Text className="text-[14px] font-medium" style={{ color: '#9b8cc5' }}>맑음</Text>
+          <Text className="text-[14px] font-medium" style={{ color: '#9b8cc5' }}>{sky}</Text>
         </View>
       </View>
       <View className="w-[60px] h-[60px] relative justify-center items-center">
