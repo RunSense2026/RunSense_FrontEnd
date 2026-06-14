@@ -7,13 +7,11 @@
 
 // ─── 앱 내부에서 사용하는 camelCase DTO ────────────────────────────
 
-/** AI 코칭 생성 요청 — POST /ai/coaching */
+/** 실시간 코칭 생성 요청 — POST /ai/coaching (activity_id 없음. 러닝 중 1분 간격 호출) */
 export interface AiCoachingRequestDto {
-  /** 러닝 기록 ID */
-  activityId: number;
-  /** 평균 페이스 (분/km 등 실수) */
+  /** 평균/현재 페이스 (분/km 실수) */
   pace: number;
-  /** 평균 심박수 (bpm) */
+  /** 심박수 (bpm) */
   heartRate: number;
   /** 케이던스 (spm) */
   cadence: number;
@@ -27,7 +25,7 @@ export interface AiCoachingRequestDto {
   hitmapJson?: Record<string, unknown> | null;
 }
 
-/** AI 코칭 조회/단건 응답 — GET /ai/coaching, GET·PATCH·DELETE /ai/coaching/{id} */
+/** 코칭 조회/단건 응답 — GET /ai/coaching, GET·PATCH /ai/coaching/{id} (activity_id 포함) */
 export interface AiCoachingResultDto {
   coachingId: number;
   activityId: number;
@@ -36,24 +34,44 @@ export interface AiCoachingResultDto {
   recExercise: string | null;
 }
 
-/** AI 코칭 생성 응답 (음성 파일 포함) — POST /ai/coaching */
-export interface AiCoachingWithVoiceDto extends AiCoachingResultDto {
+/** 실시간 코칭 생성 응답 (음성 파일 포함) — POST /ai/coaching (activity_id 없음) */
+export interface AiCoachingWithVoiceDto {
+  coachingId: number;
+  feedbackText: string;
+  focusPoint: string | null;
+  recExercise: string | null;
   /** 생성된 음성 파일 경로 (예: "/audio/coach_xxxx.mp3") */
   voiceFile: string | null;
 }
 
-/** AI 코칭 수정 요청 — PATCH /ai/coaching/{id} */
+/** 코칭 수정 요청 — PATCH /ai/coaching/{id} */
 export interface AiCoachingUpdateDto {
   feedbackText?: string | null;
   focusPoint?: string | null;
   recExercise?: string | null;
 }
 
+/** 코칭 요약 리포트의 개별 항목 */
+export interface AiCoachingReportItem {
+  title: string;
+  description: string;
+  recExercise: string;
+  count: number;
+}
+
+/** 코칭 요약 리포트 — POST /ai/coaching/report, GET /ai/coaching/report/{activityId} */
+export interface AiCoachingReportDto {
+  reportId: number | null;
+  activityId: number;
+  summaryTitle: string;
+  totalCoachingCount: number;
+  items: AiCoachingReportItem[];
+}
+
 // ─── 서버 와이어 포맷 (snake_case, 매핑 전용) ───────────────────────
 
-/** POST /ai/coaching 요청 본문 (서버 와이어 포맷) */
+/** POST /ai/coaching 요청 본문 */
 export interface CoachingRequestWire {
-  activity_id: number;
   pace: number;
   heart_rate: number;
   cadence: number;
@@ -63,7 +81,7 @@ export interface CoachingRequestWire {
   hitmap_json?: Record<string, unknown> | null;
 }
 
-/** 코칭 조회 응답 (서버 와이어 포맷) */
+/** 코칭 조회 응답 */
 export interface CoachingResponseWire {
   coaching_id: number;
   activity_id: number;
@@ -72,14 +90,35 @@ export interface CoachingResponseWire {
   rec_exercise: string | null;
 }
 
-/** POST /ai/coaching 응답 (서버 와이어 포맷, 음성 파일 포함) */
-export interface CoachingWithVoiceResponseWire extends CoachingResponseWire {
+/** POST /ai/coaching 응답 (음성 파일 포함) */
+export interface CoachingWithVoiceResponseWire {
+  coaching_id: number;
+  feedback_text: string;
+  focus_point: string | null;
+  rec_exercise: string | null;
   voice_file: string | null;
 }
 
-/** PATCH /ai/coaching/{id} 요청 본문 (서버 와이어 포맷) */
+/** PATCH /ai/coaching/{id} 요청 본문 */
 export interface CoachingUpdateWire {
   feedback_text?: string | null;
   focus_point?: string | null;
   rec_exercise?: string | null;
+}
+
+/** 리포트 항목 와이어 */
+export interface CoachingReportItemWire {
+  title: string;
+  description: string;
+  rec_exercise: string;
+  count: number;
+}
+
+/** 리포트 응답 와이어 */
+export interface CoachingReportResponseWire {
+  report_id: number | null;
+  activity_id: number;
+  summary_title: string;
+  total_coaching_count: number;
+  items: CoachingReportItemWire[];
 }

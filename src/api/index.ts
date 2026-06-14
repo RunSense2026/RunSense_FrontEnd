@@ -3,6 +3,8 @@ export { signUp, login, checkEmailDuplicate, reissue, logout } from './auth';
 export { saveRun, readAllRuns, readRunsByDate, readRun } from './run';
 export {
   createCoaching,
+  createCoachingReport,
+  readCoachingReport,
   readCoachingsByActivity,
   readCoaching,
   updateCoaching,
