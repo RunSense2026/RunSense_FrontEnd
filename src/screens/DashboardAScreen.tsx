@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
-import { useFocusEffect } from '@react-navigation/native';
 
 import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal } from '@/components/domain';
 import { fmtPace, fmtTime, hrZone } from '@/utils/format';
 import { useTicker } from '@/hooks/useTicker';
+import { useRunSession } from '@/hooks/useRunSession';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -13,23 +13,12 @@ import type { ScreenProps } from '@/types/navigation';
 // VARIATION A — "Pace Hero" — pace dominates as a glowing ring
 // ═════════════════════════════════════════════════════════════
 export const DashboardAScreen = ({ navigation }: ScreenProps<'DashboardA'>) => {
-  const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
 
-  // Tick only while focused so a backgrounded run screen doesn't keep burning the JS thread.
-  useFocusEffect(
-    useCallback(() => {
-      if (paused) return;
-      const id = setInterval(() => setTick((t) => t + 1), 1000);
-      return () => clearInterval(id);
-    }, [paused]),
-  );
-
-  const sec = 1068 + tick;
-  const distKm = 3.24 + tick * 0.0028;
+  // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
+  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
-  const paceSpk = 328 + Math.round(Math.cos(tick / 6) * 4);
   const animatedPace = useTicker(paceSpk, 0.08);
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
   const zone = hrZone(hr, 164);
@@ -131,7 +120,9 @@ export const DashboardAScreen = ({ navigation }: ScreenProps<'DashboardA'>) => {
         onCancel={() => setEndOpen(false)}
         onConfirm={() => {
           setEndOpen(false);
-          navigation.navigate('Report');
+          navigation.navigate('Report', {
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad },
+          });
         }}
       />
     </DarkShell>

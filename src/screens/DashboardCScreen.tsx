@@ -1,10 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Path, Circle, G, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
-import { useFocusEffect } from '@react-navigation/native';
 
 import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal } from '@/components/domain';
 import { fmtPace, hrZone } from '@/utils/format';
+import { useRunSession } from '@/hooks/useRunSession';
+import { useInsoleStore } from '@/stores/insoleStore';
+import { cadenceFromSteps, heatLevels, HEAT_COLORS, type HeatLevel } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -12,27 +14,35 @@ import type { ScreenProps } from '@/types/navigation';
 // VARIATION C — "Form Focus" — gait sensors emphasized
 // ═════════════════════════════════════════════════════════════
 export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
-  const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
 
-  // Tick only while focused so a backgrounded run screen doesn't keep burning the JS thread.
-  useFocusEffect(
-    useCallback(() => {
-      if (paused) return;
-      const id = setInterval(() => setTick((t) => t + 1), 1000);
-      return () => clearInterval(id);
-    }, [paused]),
-  );
-
-  const distKm = 3.24 + tick * 0.0028;
+  // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
+  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
-  const paceSpk = 328 + Math.round(Math.cos(tick / 6) * 4);
   const form = 84 + Math.round(Math.sin(tick / 5) * 2);
-  const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
-  const lFsr = [0.4, 0.55, 0.3, 0.7, 0.85].map((v, i) => Math.min(1, v + Math.sin((tick + i) / 2) * 0.15));
-  const rFsr = [0.45, 0.5, 0.32, 0.65, 0.82].map((v, i) => Math.min(1, v + Math.cos((tick + i) / 2) * 0.15));
   const zone = hrZone(hr, 164);
+
+  // 실제 인솔이 연결돼 있으면 케이던스·발 압력을 실데이터로, 아니면 시뮬레이션으로.
+  const insoleL = useInsoleStore((s) => s.L);
+  const insoleR = useInsoleStore((s) => s.R);
+  const stepTimes = useInsoleStore((s) => s.stepTimes);
+
+  const liveCad = cadenceFromSteps(stepTimes, Date.now());
+  const cad =
+    (insoleL.connected || insoleR.connected) && liveCad > 0
+      ? liveCad
+      : 178 + Math.round(Math.sin(tick / 3) * 2);
+
+  const lFsr = insoleL.packet
+    ? toFsr(insoleL.packet.avg)
+    : [0.4, 0.55, 0.3, 0.7, 0.85].map((v, i) => Math.min(1, v + Math.sin((tick + i) / 2) * 0.15));
+  const rFsr = insoleR.packet
+    ? toFsr(insoleR.packet.avg)
+    : [0.45, 0.5, 0.32, 0.65, 0.82].map((v, i) => Math.min(1, v + Math.cos((tick + i) / 2) * 0.15));
+  // 착지 히트맵 색상 — 실제 인솔일 때만 평균 압력 랭킹(빨강/주황/초록)으로 표시.
+  const lLevels = insoleL.packet ? heatLevels(insoleL.packet.avg) : undefined;
+  const rLevels = insoleR.packet ? heatLevels(insoleR.packet.avg) : undefined;
 
   return (
     <DarkShell recording>
@@ -76,8 +86,8 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
             <Text className="text-[11px] text-purple-200">균형 49 / 51</Text>
           </View>
           <View className="flex-row justify-center gap-[36px]">
-            <FootPressure side="L" fsr={lFsr} />
-            <FootPressure side="R" fsr={rFsr} />
+            <FootPressure side="L" fsr={lFsr} levels={lLevels} />
+            <FootPressure side="R" fsr={rFsr} levels={rLevels} />
           </View>
         </RSCard>
       </View>
@@ -121,11 +131,14 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
       <EndRunModal
         visible={endOpen}
         distKm={distKm}
+        sec={sec}
         pace={fmtPace(paceSpk)}
         onCancel={() => setEndOpen(false)}
         onConfirm={() => {
           setEndOpen(false);
-          navigation.navigate('Report');
+          navigation.navigate('Report', {
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad, formScore: form },
+          });
         }}
       />
     </DarkShell>
@@ -211,7 +224,13 @@ const FOOT_POSITIONS = [
   { x: 50, y: 60 },
   { x: 40, y: 100 },
 ];
-const FootPressure = ({ side, fsr }: { side: 'L' | 'R'; fsr: number[] }) => (
+
+// 아날로그 10bit 기준으로 FSR 평균 압력을 0~1 로 정규화.
+const FSR_MAX = 1023;
+const toFsr = (avg: number[]): number[] => avg.map((v) => Math.max(0, Math.min(1, v / FSR_MAX)));
+
+// levels(실제 인솔 착지 히트맵 색상)가 있으면 그 색을, 없으면 기존 크기 기반 색을 쓴다.
+const FootPressure = ({ side, fsr, levels }: { side: 'L' | 'R'; fsr: number[]; levels?: HeatLevel[] }) => (
   <View className="items-center">
     <Text className="text-[10px] text-t3 mb-[6px] tracking-[0.8px] font-semibold">
       {side === 'L' ? '왼발' : '오른발'}
@@ -226,7 +245,13 @@ const FootPressure = ({ side, fsr }: { side: 'L' | 'R'; fsr: number[] }) => (
       {fsr.map((v, i) => {
         const p = FOOT_POSITIONS[i];
         const radius = 6 + v * 7;
-        const color = v > 0.7 ? '#ef4444' : v > 0.45 ? '#fbbf24' : '#a78bfa';
+        const color = levels
+          ? HEAT_COLORS[levels[i]]
+          : v > 0.7
+            ? '#ef4444'
+            : v > 0.45
+              ? '#fbbf24'
+              : '#a78bfa';
         return (
           <G key={i}>
             <Circle cx={p.x} cy={p.y} r={radius + 4} fill={color} opacity={0.18} />

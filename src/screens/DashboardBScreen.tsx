@@ -1,9 +1,9 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { View, Text } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 
 import { DarkShell, RSCoach, RSButton, EndRunModal } from '@/components/domain';
 import { fmtPace, fmtTime, hrZone } from '@/utils/format';
+import { useRunSession } from '@/hooks/useRunSession';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -11,23 +11,12 @@ import type { ScreenProps } from '@/types/navigation';
 // VARIATION B — "Glance Mode" — extra-large pace, minimal chrome
 // ═════════════════════════════════════════════════════════════
 export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
-  const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
 
-  // Tick only while focused so a backgrounded run screen doesn't keep burning the JS thread.
-  useFocusEffect(
-    useCallback(() => {
-      if (paused) return;
-      const id = setInterval(() => setTick((t) => t + 1), 1000);
-      return () => clearInterval(id);
-    }, [paused]),
-  );
-
-  const sec = 1068 + tick;
-  const distKm = 3.24 + tick * 0.0028;
+  // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
+  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
-  const paceSpk = 328 + Math.round(Math.cos(tick / 6) * 4);
 
   return (
     <DarkShell recording>
@@ -89,7 +78,9 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
         onCancel={() => setEndOpen(false)}
         onConfirm={() => {
           setEndOpen(false);
-          navigation.navigate('Report');
+          navigation.navigate('Report', {
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr },
+          });
         }}
       />
     </DarkShell>

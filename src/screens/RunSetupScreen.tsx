@@ -8,7 +8,7 @@ import { gradients } from '@/theme/tokens';
 
 import type { ScreenProps } from '@/types/navigation';
 
-type Mode = 'dist' | 'lthr';
+type Mode = 'dist' | 'free' | 'lthr';
 
 export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   const [mode, setMode] = useState<Mode>('dist');
@@ -16,7 +16,8 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   const [timeMin, setTimeMin] = useState(28);
 
   const pace = useMemo(() => {
-    if (mode === 'lthr') return null;
+    // 목표 페이스는 거리 모드(거리·시간 목표)에서만 계산된다.
+    if (mode !== 'dist') return null;
     return (timeMin * 60) / distKm;
   }, [distKm, timeMin, mode]);
 
@@ -35,6 +36,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           : { label: '무산소 (Z5)', c: '#f87171' };
 
   const isLthr = mode === 'lthr';
+  const isFree = mode === 'free';
   const showTargetInputs = mode === 'dist';
 
   return (
@@ -50,7 +52,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
         pointerEvents="none"
       />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         <DarkNavHeader title="러닝 시작" sub="오늘의 세션" onBack={() => navigation.goBack()} />
 
         {/* Mode tabs — dist | LTHR */}
@@ -65,6 +67,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           {(
             [
               { id: 'dist', label: '거리' },
+              { id: 'free', label: '자유' },
               { id: 'lthr', label: 'LTHR', accent: true },
             ] as { id: Mode; label: string; accent?: boolean }[]
           ).map((t) => {
@@ -208,8 +211,8 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           </View>
         )}
 
-        {/* Auto pace hero — non-LTHR modes */}
-        {!isLthr && (
+        {/* Auto pace hero — 거리 모드에서만 (목표 거리·시간으로 페이스 계산) */}
+        {mode === 'dist' && (
           <LinearGradient
             colors={['rgba(124,58,237,0.34)', 'rgba(59,130,246,0.22)']}
             start={{ x: 0, y: 0 }}
@@ -284,6 +287,9 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           </LinearGradient>
         )}
 
+        {/* Free-run intro hero — 자유 모드 */}
+        {isFree && <FreeRunIntro />}
+
         {/* LTHR intro hero — LTHR mode */}
         {isLthr && <LTHRTestIntro />}
 
@@ -320,7 +326,9 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
                 <Polygon points="7,5 19,12 7,19" fill="#fff" />
               </Svg>
             )}
-            <Text className="text-white text-base font-bold">{isLthr ? 'LTHR 테스트 시작' : '러닝 시작'}</Text>
+            <Text className="text-white text-base font-bold">
+              {isLthr ? 'LTHR 테스트 시작' : isFree ? '자유 러닝 시작' : '러닝 시작'}
+            </Text>
           </LinearGradient>
         </Pressable>
 
@@ -328,7 +336,11 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           className="text-[10px] text-center mt-2 font-medium"
           style={{ color: isLthr ? 'rgba(251,191,36,0.65)' : 'rgba(167,139,250,0.55)' }}
         >
-          {isLthr ? '3초 후 워밍업 → 30분 전력 질주 시작' : '3초 후 GPS 신호 잠금 → 자동 시작'}
+          {isLthr
+            ? '3초 후 워밍업 → 30분 전력 질주 시작'
+            : isFree
+              ? '목표 없이 자유롭게 — 3초 후 GPS 잠금 → 자동 시작'
+              : '3초 후 GPS 신호 잠금 → 자동 시작'}
         </Text>
       </ScrollView>
     </DarkShell>
@@ -506,6 +518,75 @@ const LTHRTestIntro = () => (
       </View>
     </View>
   </View>
+);
+
+const FreeRunIntro = () => (
+  <LinearGradient
+    colors={['rgba(124,58,237,0.34)', 'rgba(59,130,246,0.22)']}
+    start={{ x: 0, y: 0 }}
+    end={{ x: 1, y: 1 }}
+    style={{
+      borderRadius: 18,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: 0.5,
+      borderColor: 'rgba(167,139,250,0.4)',
+      position: 'relative',
+      overflow: 'hidden',
+    }}
+  >
+    <View
+      className="absolute -top-10 -right-10 w-[140px] h-[140px] rounded-full"
+      style={{ backgroundColor: 'rgba(124,58,237,0.3)' }}
+      pointerEvents="none"
+    />
+
+    <View className="flex-row items-center gap-2">
+      <LinearGradient
+        colors={gradients.action}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{ width: 22, height: 22, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Svg width={12} height={12} viewBox="0 0 24 24">
+          <Polygon points="7,5 19,12 7,19" fill="#fff" />
+        </Svg>
+      </LinearGradient>
+      <Text className="text-[10px] font-bold tracking-[0.8px] uppercase" style={{ color: '#ddd6fe' }}>
+        목표 없는 자유 러닝
+      </Text>
+    </View>
+
+    <Text className="text-[22px] font-bold text-white mt-[10px] tracking-[-0.66px] leading-[26px]">
+      거리·시간 목표 없이{'\n'}자유롭게 달려요
+    </Text>
+    <Text className="text-[12px] mt-2 leading-[18px] font-medium" style={{ color: 'rgba(221,214,254,0.82)' }}>
+      목표를 정하지 않고 시작합니다. 거리·시간·페이스는 0부터 실시간으로 기록되고, 종료하면 자동으로 리포트와 AI 코칭이 만들어져요.
+    </Text>
+
+    <View className="flex-row gap-[6px] mt-[14px]">
+      {[
+        { t: '실시간 기록', s: '거리·시간·페이스' },
+        { t: '폼 분석', s: '발 압력·케이던스' },
+        { t: 'AI 코칭', s: '종료 후 자동' },
+      ].map((f) => (
+        <View
+          key={f.t}
+          className="flex-1 rounded-[12px] py-2 px-1 items-center"
+          style={{
+            backgroundColor: 'rgba(0,0,0,0.18)',
+            borderWidth: 0.5,
+            borderColor: 'rgba(167,139,250,0.24)',
+          }}
+        >
+          <Text className="text-[12px] font-bold text-white tracking-[-0.2px]">{f.t}</Text>
+          <Text className="text-[9px] font-semibold mt-[2px] text-center" style={{ color: 'rgba(221,214,254,0.65)' }}>
+            {f.s}
+          </Text>
+        </View>
+      ))}
+    </View>
+  </LinearGradient>
 );
 
 const PaceGauge = ({ pace }: { pace: number | null }) => {
