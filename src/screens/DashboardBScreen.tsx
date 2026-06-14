@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { View, Text } from 'react-native';
 
 import { DarkShell, RSCoach, RSButton, EndRunModal } from '@/components/domain';
-import { fmtPace, fmtTime, hrZone } from '@/utils/format';
+import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
+import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -17,6 +18,14 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
   const { tick, sec, distKm, paceSpk } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
+  const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
+
+  // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
+  const liveCoaching = useLiveCoaching(paused, () => ({
+    pace: spkToMinutes(paceSpk),
+    heartRate: hr,
+    cadence: cad,
+  }));
 
   return (
     <DarkShell recording>
@@ -58,7 +67,10 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
       <View className="flex-1" />
 
       <View className="px-4 pb-3">
-        <RSCoach subtitle="실시간" message="좋은 페이스에요. 어깨 힘만 살짝 풀어보세요." />
+        <RSCoach
+          subtitle={liveCoaching?.focusPoint ?? '실시간'}
+          message={liveCoaching?.feedbackText ?? '좋은 페이스에요. 어깨 힘만 살짝 풀어보세요.'}
+        />
       </View>
 
       <View className="px-4 pb-[14px] flex-row gap-[10px]">

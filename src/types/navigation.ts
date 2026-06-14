@@ -33,7 +33,8 @@ export type RootStackParamList = {
 
   // Run flow
   RunSetup: undefined;
-  DashboardA: undefined;
+  // 거리 모드에서 정한 목표 페이스(초/km)를 라이브 화면으로 전달
+  DashboardA: { targetPaceSpk?: number } | undefined;
   DashboardB: undefined;
   DashboardC: undefined;
   // activityId 로 들어오면 저장된 기록 조회, run 으로 들어오면 갓 뛴 세션(자동 저장 대상).

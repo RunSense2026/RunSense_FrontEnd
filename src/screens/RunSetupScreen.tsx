@@ -300,7 +300,19 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
         </View>
 
         {/* Start button — switches color/label by mode */}
-        <Pressable onPress={() => (isLthr ? navigation.navigate('LTHRTest') : navigation.navigate('DashboardA'))}>
+        <Pressable
+          onPress={() => {
+            if (isLthr) {
+              navigation.navigate('LTHRTest');
+              return;
+            }
+            // 거리 모드면 목표 페이스(초/km)를 라이브 화면으로 전달, 자유 모드면 없음
+            navigation.navigate(
+              'DashboardA',
+              mode === 'dist' && pace ? { targetPaceSpk: Math.round(pace) } : undefined,
+            );
+          }}
+        >
           <LinearGradient
             colors={isLthr ? ['#f59e0b', '#ef4444'] : gradients.action}
             start={{ x: 0, y: 0 }}

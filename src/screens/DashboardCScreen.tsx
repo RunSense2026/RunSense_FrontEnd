@@ -3,10 +3,11 @@ import { View, Text } from 'react-native';
 import Svg, { Path, Circle, G, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal } from '@/components/domain';
-import { fmtPace, hrZone } from '@/utils/format';
+import { fmtPace, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
+import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useInsoleStore } from '@/stores/insoleStore';
-import { cadenceFromSteps, heatLevels, HEAT_COLORS, type HeatLevel } from '@/utils/insoleMetrics';
+import { cadenceFromSteps, heatLevels, HEAT_COLORS, HEEL_INDEX, type HeatLevel } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -43,6 +44,49 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
   // 착지 히트맵 색상 — 실제 인솔일 때만 평균 압력 랭킹(빨강/주황/초록)으로 표시.
   const lLevels = insoleL.packet ? heatLevels(insoleL.packet.avg) : undefined;
   const rLevels = insoleR.packet ? heatLevels(insoleR.packet.avg) : undefined;
+
+  // 러닝 중 1분 간격으로 AI 코칭 생성(연결된 인솔의 발 데이터 포함) → 코치 카드에 표시.
+  const liveCoaching = useLiveCoaching(paused, () => {
+    const packet = insoleL.packet ?? insoleR.packet;
+    return {
+      pace: spkToMinutes(paceSpk),
+      heartRate: hr,
+      cadence: cad,
+      footSide: packet ? (insoleL.packet ? 'Left' : 'Right') : null,
+      heelStrikeRate: packet ? packet.avg[HEEL_INDEX] : null,
+      hitmapJson: packet ? { avg: packet.avg } : null,
+    };
+  });
+
+  // 좌우 밸런스 — 양발 인솔 total 압력 비율(둘 다 연결 시), 아니면 목업.
+  const balance = (() => {
+    const lt = insoleL.packet?.total ?? 0;
+    const rt = insoleR.packet?.total ?? 0;
+    if (insoleL.packet && insoleR.packet && lt + rt > 0) {
+      const lp = Math.round((lt / (lt + rt)) * 100);
+      return `${lp} / ${100 - lp}`;
+    }
+    return '49 / 51';
+  })();
+
+  // 착지 패턴 — 인솔 압력 분포에서 앞꿈치/중족/뒤꿈치 중 우세 영역(연결 시), 아니면 목업.
+  const landing = (() => {
+    const packet = insoleL.packet ?? insoleR.packet;
+    if (!packet) return { title: '중족부', sub: '72% 미드풋 · 안정' };
+    const a = packet.avg;
+    const fore = a[0] ?? 0;
+    const mid = (a[1] ?? 0) + (a[2] ?? 0) + (a[3] ?? 0);
+    const heel = a[4] ?? 0;
+    const total = fore + mid + heel;
+    if (total <= 0) return { title: '중족부', sub: '측정 중…' };
+    const regions = [
+      { title: '뒤꿈치', label: '힐 스트라이크', v: heel },
+      { title: '중족부', label: '미드풋', v: mid },
+      { title: '앞꿈치', label: '포어풋', v: fore },
+    ];
+    const top = regions.reduce((m, r) => (r.v > m.v ? r : m));
+    return { title: top.title, sub: `${Math.round((top.v / total) * 100)}% ${top.label} · 안정` };
+  })();
 
   return (
     <DarkShell recording>
@@ -83,7 +127,7 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
             <Text className="text-[11px] text-t3 tracking-[0.66px] uppercase font-semibold">
               발 압력 · 실시간
             </Text>
-            <Text className="text-[11px] text-purple-200">균형 49 / 51</Text>
+            <Text className="text-[11px] text-purple-200">균형 {balance}</Text>
           </View>
           <View className="flex-row justify-center gap-[36px]">
             <FootPressure side="L" fsr={lFsr} levels={lLevels} />
@@ -108,15 +152,18 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
           <Text className="text-[10px] text-t3 tracking-[0.66px] uppercase font-semibold">
             착지 패턴
           </Text>
-          <Text className="text-[18px] font-semibold text-white mt-1">중족부</Text>
-          <Text className="text-[10px] text-t3 mt-[2px]">72% 미드풋 · 안정</Text>
+          <Text className="text-[18px] font-semibold text-white mt-1">{landing.title}</Text>
+          <Text className="text-[10px] text-t3 mt-[2px]">{landing.sub}</Text>
         </RSCard>
       </View>
 
       <View className="flex-1" />
 
       <View className="px-4 pt-[10px]">
-        <RSCoach subtitle="폼 분석" message="좌우 균형이 좋아요. 어깨를 살짝 내려보세요." />
+        <RSCoach
+          subtitle={liveCoaching?.focusPoint ?? '폼 분석'}
+          message={liveCoaching?.feedbackText ?? '좌우 균형이 좋아요. 어깨를 살짝 내려보세요.'}
+        />
       </View>
 
       <View className="px-4 pt-3 pb-[14px] flex-row gap-[10px]">

@@ -8,6 +8,7 @@ import { LightShell, ProfileAvatar } from '@/components/domain';
 import { logout } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useInsoleStore } from '@/stores/insoleStore';
 import { refreshToken } from '@/utils/storage';
 
 import type { TabScreenProps } from '@/types/navigation';
@@ -15,6 +16,10 @@ import type { TabScreenProps } from '@/types/navigation';
 export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   const { name, email, age, weight, avatarUri } = useProfileStore();
   const clearSession = useAuthStore((s) => s.clearSession);
+  const insoleL = useInsoleStore((s) => s.L);
+  const insoleR = useInsoleStore((s) => s.R);
+  // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(이름만, 항상 포함)
+  const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + 1;
   const [loggingOut, setLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -65,7 +70,7 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
               valueComponent={
                 <View className="flex-row items-center gap-[6px]">
                   <View className="w-[7px] h-[7px] rounded-full bg-purple-500" />
-                  <Text className="text-purple-500 font-bold text-[13px]">3개 연결됨</Text>
+                  <Text className="text-purple-500 font-bold text-[13px]">{deviceCount}개 연결됨</Text>
                 </View>
               }
               chevron

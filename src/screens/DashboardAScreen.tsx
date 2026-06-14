@@ -3,18 +3,22 @@ import { View, Text } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal } from '@/components/domain';
-import { fmtPace, fmtTime, hrZone } from '@/utils/format';
+import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useTicker } from '@/hooks/useTicker';
 import { useRunSession } from '@/hooks/useRunSession';
+import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 
 import type { ScreenProps } from '@/types/navigation';
 
 // ═════════════════════════════════════════════════════════════
 // VARIATION A — "Pace Hero" — pace dominates as a glowing ring
 // ═════════════════════════════════════════════════════════════
-export const DashboardAScreen = ({ navigation }: ScreenProps<'DashboardA'>) => {
+export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'>) => {
   const [paused, setPaused] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+
+  // 거리 모드에서 정한 목표 페이스(초/km). 없으면 기본 330("5'30")을 쓴다.
+  const target = route.params?.targetPaceSpk ?? 330;
 
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
   const { tick, sec, distKm, paceSpk } = useRunSession(paused);
@@ -23,7 +27,13 @@ export const DashboardAScreen = ({ navigation }: ScreenProps<'DashboardA'>) => {
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
   const zone = hrZone(hr, 164);
 
-  const target = 330;
+  // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
+  const liveCoaching = useLiveCoaching(paused, () => ({
+    pace: spkToMinutes(paceSpk),
+    heartRate: hr,
+    cadence: cad,
+  }));
+
   const deviation = Math.max(-30, Math.min(30, paceSpk - target));
   const ringPct = 0.5 + -deviation / 60;
 
@@ -90,7 +100,10 @@ export const DashboardAScreen = ({ navigation }: ScreenProps<'DashboardA'>) => {
 
       {/* AI coach */}
       <View className="px-4 pt-[10px]">
-        <RSCoach subtitle="3km 분석" message="페이스가 안정적이에요. 이 리듬으로 1km만 더 가볼까요?" />
+        <RSCoach
+          subtitle={liveCoaching?.focusPoint ?? '실시간 분석'}
+          message={liveCoaching?.feedbackText ?? '페이스가 안정적이에요. 이 리듬으로 1km만 더 가볼까요?'}
+        />
       </View>
 
       {/* Micro row */}
