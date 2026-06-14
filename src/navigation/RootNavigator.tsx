@@ -20,10 +20,14 @@ import type { RootStackParamList } from '@/types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-export const RootNavigator = () => {
+export const RootNavigator = ({
+  initialRouteName = 'Login',
+}: {
+  initialRouteName?: keyof RootStackParamList;
+}) => {
   return (
     <Stack.Navigator
-      initialRouteName="Login"
+      initialRouteName={initialRouteName}
       screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0716' } }}
     >
       {/* Bottom-tab home (Home / Course / History / Settings) */}

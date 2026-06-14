@@ -7,6 +7,7 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { AuthShell, AEField } from '@/components/domain';
 import { login } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
+import { setRememberMe } from '@/utils/storage';
 import { gradients } from '@/theme/tokens';
 import runsenseLogo from '@/assets/runsense-logo.png';
 
@@ -20,6 +21,7 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setSession = useAuthStore((s) => s.setSession);
+  const [keepLogin, setKeepLogin] = useState(true); // 로그인 유지 (기본 ON)
 
   const handleLogin = async () => {
     if (loading) return;
@@ -31,6 +33,7 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
     setLoading(true);
     try {
       const result = await login({ email: email.trim(), loginPw: pwd });
+      setRememberMe(keepLogin); // 토큰 영구 저장 여부 (setSession 의 토큰 저장보다 먼저)
       setSession(result);
       navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (e) {
@@ -91,12 +94,24 @@ export const LoginScreen = ({ navigation }: ScreenProps<'Login'>) => {
             onBlur={() => setFocus(null)}
             right={<PwdToggle visible={showPwd} onToggle={() => setShowPwd((v) => !v)} />}
           />
-          <Pressable
-            onPress={() => navigation.navigate('FindAccount')}
-            className="self-end -mt-[2px]"
-          >
-            <Text className="text-[12px] text-t3 font-medium">비밀번호 찾기</Text>
-          </Pressable>
+          <View className="flex-row items-center justify-between -mt-[2px]">
+            <Pressable onPress={() => setKeepLogin((v) => !v)} className="flex-row items-center gap-[7px]" hitSlop={8}>
+              <View
+                className="w-[18px] h-[18px] rounded-[6px] items-center justify-center"
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: keepLogin ? '#a78bfa' : 'rgba(255,255,255,0.3)',
+                  backgroundColor: keepLogin ? 'rgba(167,139,250,0.25)' : 'transparent',
+                }}
+              >
+                {keepLogin && <Text className="text-[11px] font-bold text-purple-200">✓</Text>}
+              </View>
+              <Text className="text-[12px] text-t2 font-medium">로그인 유지</Text>
+            </Pressable>
+            <Pressable onPress={() => navigation.navigate('FindAccount')}>
+              <Text className="text-[12px] text-t3 font-medium">비밀번호 찾기</Text>
+            </Pressable>
+          </View>
         </View>
 
         {error && (
