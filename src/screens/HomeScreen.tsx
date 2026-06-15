@@ -113,7 +113,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 // ─── Air quality + weather card ──────────────────────────────────
 const AirWeatherCard = () => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
-  const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
+  const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string; cardBg: string; cardBorder: string } | null>(null);
   const [locationName, setLocationName] = useState<string>(DEFAULT_LOCATION.NAME);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -153,13 +153,30 @@ const AirWeatherCard = () => {
         if (air) {
           const grade = air.pm25Grade || air.khaiGrade || '2';
           let label = '보통';
-          let color = '#059669'; // 기본 색상 (초록)
-          let badgeBg = 'rgba(16,185,129,0.15)';
+          let color = '#fbbf24'; // 노란색
+          let badgeBg = 'rgba(251,191,36,0.15)';
+          let cardBg = 'rgba(251,191,36,0.05)';
+          let cardBorder = 'rgba(251,191,36,0.3)';
 
-          if (grade === '1') { label = '최고'; }
-          else if (grade === '2') { label = '야외 OK'; }
-          else if (grade === '3') { label = '주의'; color = '#f59e0b'; badgeBg = 'rgba(245,158,11,0.15)'; }
-          else if (grade === '4') { label = '야외 자제'; color = '#ef4444'; badgeBg = 'rgba(239,68,68,0.15)'; }
+          if (grade === '1') {
+            label = '좋음';
+            color = '#10b981';
+            badgeBg = 'rgba(16,185,129,0.15)';
+            cardBg = 'rgba(16,185,129,0.05)';
+            cardBorder = 'rgba(16,185,129,0.3)';
+          } else if (grade === '3') {
+            label = '나쁨';
+            color = '#f97316';
+            badgeBg = 'rgba(249,115,22,0.15)';
+            cardBg = 'rgba(249,115,22,0.05)';
+            cardBorder = 'rgba(249,115,22,0.3)';
+          } else if (grade === '4') {
+            label = '매우 나쁨';
+            color = '#ef4444';
+            badgeBg = 'rgba(239,68,68,0.15)';
+            cardBg = 'rgba(239,68,68,0.05)';
+            cardBorder = 'rgba(239,68,68,0.3)';
+          }
 
           // 초미세먼지(PM2.5) 데이터가 통신 장애나 점검으로 인해 '-'로 올 경우 미세먼지(PM10) 데이터로 대체합니다.
           let displayValue = air.pm25Value;
@@ -172,6 +189,8 @@ const AirWeatherCard = () => {
             label,
             color,
             badgeBg,
+            cardBg,
+            cardBorder,
           });
         }
       } catch (error) {
@@ -210,9 +229,11 @@ const AirWeatherCard = () => {
 
   // 대기질 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
   const airValue = airData?.value ?? '32';
-  const airLabel = airData?.label ?? '야외 OK';
-  const airColor = airData?.color ?? '#059669';
-  const airBadgeBg = airData?.badgeBg ?? 'rgba(16,185,129,0.15)';
+  const airLabel = airData?.label ?? '보통';
+  const airColor = airData?.color ?? '#fbbf24';
+  const airBadgeBg = airData?.badgeBg ?? 'rgba(251,191,36,0.15)';
+  const airCardBg = airData?.cardBg ?? 'rgba(251,191,36,0.05)';
+  const airCardBorder = airData?.cardBorder ?? 'rgba(251,191,36,0.3)';
 
   return (
     <View
@@ -254,14 +275,14 @@ const AirWeatherCard = () => {
       <View
         className="flex-1 rounded-[14px] py-[12px] items-center"
         style={{
-          backgroundColor: 'rgba(16,185,129,0.05)',
+          backgroundColor: airCardBg,
           borderWidth: 1,
-          borderColor: 'rgba(16,185,129,0.3)',
+          borderColor: airCardBorder,
         }}
       >
-        <Text className="text-[11px] font-semibold" style={{ color: '#059669' }}>대기질</Text>
+        <Text className="text-[11px] font-semibold" style={{ color: '#9b8cc5' }}>대기질</Text>
         <Text className="text-[22px] font-bold mt-[2px]" style={{ color: airColor }}>{airValue}</Text>
-        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 ug/m2</Text>
+        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#9b8cc5' }}>PM2.5 μg/m³</Text>
         <View
           className="flex-row items-center gap-[4px] px-[10px] py-[4px] rounded-full mt-[6px]"
           style={{ backgroundColor: airBadgeBg }}

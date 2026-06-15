@@ -56,12 +56,15 @@ export const fetchWeatherData = async (
   const requestUrl = `${kmaApiUrl}/getUltraSrtNcst` +
     `?serviceKey=${publicApiKey}` +
     `&pageNo=1&numOfRows=10&dataType=JSON` +
-    `&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
+    `&base_date=${baseDate}&base_time=${baseTime}&nx=${Math.round(nx)}&ny=${Math.round(ny)}`;
+
+  console.log('🌐 기상청 API 요청 URL:', requestUrl);
 
   const res = await axios.get(requestUrl);
 
   // 공공 API 에러 발생 시 JSON이 아닌 XML 텍스트로 에러 내용을 반환하는 경우를 방어합니다.
   if (typeof res.data === 'string') {
+    console.error('기상청 API 에러 원인(XML):', res.data);
     throw new Error('API 연동 에러 - 콘솔 로그를 확인하세요.');
   }
   if (!res.data?.response?.body?.items?.item) {
