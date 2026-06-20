@@ -29,6 +29,8 @@ const getGreeting = (): string => {
 
 export const HomeScreen = ({ navigation }: HomeScreenProps) => {
   const userName = useAuthStore((s) => s.userName);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   return (
     <View className="flex-1 bg-[#f6f3ff]">
       <LinearGradient
@@ -55,25 +57,41 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
         >
           {/* Header */}
           <View className="flex-row justify-between items-center pt-[6px] pb-[14px]">
-            <View>
+            <View className="flex-1 mr-2">
               <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>{getGreeting()}</Text>
               <Text className="text-[24px] font-bold mt-[2px] tracking-[-0.72px]" style={{ color: '#1e1b4b' }}>
                 오늘도 뛰어볼까요?
               </Text>
             </View>
-            <LinearGradient
-              colors={['#7c3aed', '#3b82f6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Text className="text-white font-bold text-[14px]" numberOfLines={1}>{userName ?? '게스트'}</Text>
-            </LinearGradient>
+            <View className="flex-row items-center gap-[10px]">
+              <Pressable
+                onPress={() => setRefreshKey((k) => k + 1)}
+                className="w-9 h-9 rounded-[12px] items-center justify-center"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.7)',
+                  borderWidth: 0.5,
+                  borderColor: 'rgba(124,58,237,0.14)',
+                }}
+              >
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                  <Path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.7 1 6.4 2.6L21 3" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  <Path d="M21 3v6h-6" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </Pressable>
+              <LinearGradient
+                colors={['#7c3aed', '#3b82f6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text className="text-white font-bold text-[14px]" numberOfLines={1}>{userName ?? '게스트'}</Text>
+              </LinearGradient>
+            </View>
           </View>
 
-          <AirWeatherCard />
+          <AirWeatherCard refreshKey={refreshKey} />
           <CourseBanner onPress={() => navigation.navigate('Course')} />
-          <WeeklyGoalCard onPress={() => navigation.navigate('WeeklyGoalSetup')} />
+          <WeeklyGoalCard refreshKey={refreshKey} onPress={() => navigation.navigate('WeeklyGoalSetup')} />
 
           {/* Recent runs section header */}
           <View className="flex-row justify-between items-baseline mt-[18px] mb-[10px]">
@@ -85,7 +103,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
             </Pressable>
           </View>
 
-          <RecentRunsList navigation={navigation} />
+          <RecentRunsList refreshKey={refreshKey} navigation={navigation} />
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -93,7 +111,7 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 };
 
 // ─── Air quality + weather card ──────────────────────────────────
-const AirWeatherCard = () => {
+const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
   const [condition, setCondition] = useState<WeatherCondition>('sunny');
   const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
@@ -101,7 +119,7 @@ const AirWeatherCard = () => {
   const [loading, setLoading] = useState(true);
 
   // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백)
-  const { nx, ny, station, name: locationName, ready } = useResolvedLocation();
+  const { nx, ny, station, name: locationName, ready } = useResolvedLocation(refreshKey);
 
   useEffect(() => {
     // 위치 해석이 끝난 뒤에 날씨/대기질을 조회한다.
@@ -124,7 +142,30 @@ const AirWeatherCard = () => {
 
         // 에어코리아 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따른 UI 매핑
         if (air) {
-          const grade = air.pm25Grade || air.khaiGrade || '2';
+          // 초미세먼지(PM2.5) 데이터가 통신 장애나 점검으로 인해 '-'로 올 경우 미세먼지(PM10) 데이터로 대체합니다.
+          let displayValue = air.pm25Value;
+          if (!displayValue || displayValue === '-') {
+            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
+          }
+
+          const numericVal = parseInt(displayValue, 10);
+          let grade = '2';
+
+          if (!isNaN(numericVal)) {
+            if (numericVal <= 15) {
+              grade = '1';
+            } else if (numericVal <= 35) {
+              grade = '2';
+            } else if (numericVal <= 75) {
+              grade = '3';
+            } else {
+              grade = '4';
+            }
+          } else {
+            // 수치가 숫자가 아닐 시 API에서 온 등급 사용
+            grade = air.pm25Grade || air.khaiGrade || '2';
+          }
+
           let label = '보통';
           let color = '#059669'; // 기본 색상 (초록)
           let badgeBg = 'rgba(16,185,129,0.15)';
@@ -133,12 +174,6 @@ const AirWeatherCard = () => {
           else if (grade === '2') { label = '야외 OK'; }
           else if (grade === '3') { label = '주의'; color = '#f59e0b'; badgeBg = 'rgba(245,158,11,0.15)'; }
           else if (grade === '4') { label = '야외 자제'; color = '#ef4444'; badgeBg = 'rgba(239,68,68,0.15)'; }
-
-          // 초미세먼지(PM2.5) 데이터가 통신 장애나 점검으로 인해 '-'로 올 경우 미세먼지(PM10) 데이터로 대체합니다.
-          let displayValue = air.pm25Value;
-          if (!displayValue || displayValue === '-') {
-            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
-          }
 
           setAirData({
             value: displayValue,
@@ -311,7 +346,7 @@ const CourseBanner = ({ onPress }: { onPress: () => void }) => (
 const toYMD = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
+const WeeklyGoalCard = ({ refreshKey, onPress }: { refreshKey: number; onPress: () => void }) => {
   const targetKm = useWeeklyGoalStore((s) => s.targetKm);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [doneKm, setDoneKm] = useState(0);
@@ -349,7 +384,7 @@ const WeeklyGoalCard = ({ onPress }: { onPress: () => void }) => {
       return () => {
         cancelled = true;
       };
-    }, [isAuthenticated]),
+    }, [isAuthenticated, refreshKey]),
   );
 
   const pct = targetKm > 0 ? Math.min(1, doneKm / targetKm) : 0;
@@ -456,7 +491,7 @@ const weekdayOf = (iso: string): string => {
   return Number.isNaN(d.getTime()) ? '' : KO_WEEKDAYS[d.getDay()];
 };
 
-const RecentRunsList = ({ navigation }: { navigation: HomeScreenProps['navigation'] }) => {
+const RecentRunsList = ({ refreshKey, navigation }: { refreshKey: number; navigation: HomeScreenProps['navigation'] }) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [runs, setRuns] = useState<RunningActivityResponseDto[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -488,7 +523,7 @@ const RecentRunsList = ({ navigation }: { navigation: HomeScreenProps['navigatio
       return () => {
         cancelled = true;
       };
-    }, [isAuthenticated]),
+    }, [isAuthenticated, refreshKey]),
   );
 
   if (!isAuthenticated) return <EmptyRuns message="로그인하면 러닝 기록이 표시돼요." />;

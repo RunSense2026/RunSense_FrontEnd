@@ -43,7 +43,7 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
 
   return (
     <LightShell>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         <NavHeader title="이번 주 목표 설정" onBack={() => navigation.goBack()} />
 
         {/* Preset cards */}
@@ -305,7 +305,7 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
 };
 
 const NavHeader = ({ title, sub, onBack }: { title: string; sub?: string; onBack: () => void }) => (
-  <View className="flex-row items-center gap-[10px] pt-1 pb-[14px]">
+  <View className="flex-row items-center gap-[10px] pt-[6px] pb-[14px]">
     <Pressable
       onPress={onBack}
       className="w-[34px] h-[34px] rounded-[11px] items-center justify-center"

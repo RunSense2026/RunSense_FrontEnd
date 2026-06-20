@@ -52,7 +52,7 @@ const periodRange = (period: Period): { startDate: string; endDate: string } => 
 };
 
 export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
-  const [period, setPeriod] = useState<Period>('all');
+  const [period, setPeriod] = useState<Period>('week');
   const [sort, setSort] = useState<SortKey>('latest');
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [data, setData] = useState<RunningActivityListResponseDto | null>(null);
@@ -169,7 +169,7 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
           <HSummaryCard label="평균 폼" value={Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
         </View>
 
-        <DailyBarChart />
+        {period === 'week' && <DailyBarChart />}
 
         {/* Section title */}
         <View className="flex-row justify-between items-baseline mt-4 mb-2">
