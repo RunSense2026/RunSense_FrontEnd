@@ -391,6 +391,9 @@ const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto
         hitmapJson: JSON.stringify({ heel: 38, midfoot: 36, forefoot: 26 }),
       },
     ],
+    // NOTE: 실시간 코칭(AI 서버 POST /ai/coaching, LLM)이 현재 500 오류라 진짜 코칭이
+    // 생성되지 않는다. 그동안 요약 리포트가 비지 않도록 임시 목업 코칭을 저장한다.
+    // 서버 /ai/coaching 정상화 후 실시간 코칭으로 대체할 것.
     aiCoachings: [
       {
         feedbackText: '3km까지 평균 페이스를 일관되게 유지했어요. 호흡 리듬이 좋았어요.',
