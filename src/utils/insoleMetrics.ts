@@ -23,28 +23,9 @@ export const cadenceFromSteps = (stepTimes: number[], now: number): number => {
   return Math.round((recent.length / CADENCE_WINDOW_MS) * 60000);
 };
 
-// ─── 착지 히트맵 (평균 압력 → 색상 레벨) ────────────────────────────
+// ─── 발 압력 정규화 ──────────────────────────────────────────────
 
-export type HeatLevel = 'high' | 'mid' | 'low';
-
-/**
- * 센서별 평균 압력 배열 → 색상 레벨 배열.
- * 가장 높은 곳=high(빨강), 가장 낮은 곳=low(초록), 나머지=mid(주황).
- * (아치 가중치는 아두이노 펌웨어에서 이미 적용하므로 앱에서는 중복 적용하지 않는다 — 받은 값 그대로 랭킹)
- */
-export const heatLevels = (avg: number[]): HeatLevel[] => {
-  let maxIdx = 0;
-  let minIdx = 0;
-  avg.forEach((v, i) => {
-    if (v > avg[maxIdx]) maxIdx = i;
-    if (v < avg[minIdx]) minIdx = i;
-  });
-
-  return avg.map((_, i) => (i === maxIdx ? 'high' : i === minIdx ? 'low' : 'mid'));
-};
-
-export const HEAT_COLORS: Record<HeatLevel, string> = {
-  high: '#ef4444', // 빨강 — 최고 압력
-  mid: '#f59e0b', // 주황 — 중간 압력
-  low: '#10b981', // 초록 — 최저 압력
-};
+/** 아날로그 10bit(0~1023) 기준 FSR 평균 압력을 0~1 로 정규화. */
+export const FSR_MAX = 1023;
+export const toFsr = (avg: number[]): number[] =>
+  avg.map((v) => Math.max(0, Math.min(1, v / FSR_MAX)));

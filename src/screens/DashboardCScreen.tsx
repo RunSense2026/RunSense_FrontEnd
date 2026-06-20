@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { View, Text } from 'react-native';
-import Svg, { Path, Circle, G, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
+import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
-import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal } from '@/components/domain';
+import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal, FootPressure } from '@/components/domain';
 import { fmtPace, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
+import { useFootPressure } from '@/hooks/useFootPressure';
 import { useInsoleStore } from '@/stores/insoleStore';
-import { cadenceFromSteps, heatLevels, HEAT_COLORS, HEEL_INDEX, type HeatLevel } from '@/utils/insoleMetrics';
+import { cadenceFromSteps, HEEL_INDEX } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -35,15 +36,8 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
       ? liveCad
       : 178 + Math.round(Math.sin(tick / 3) * 2);
 
-  const lFsr = insoleL.packet
-    ? toFsr(insoleL.packet.avg)
-    : [0.4, 0.55, 0.3, 0.7, 0.85].map((v, i) => Math.min(1, v + Math.sin((tick + i) / 2) * 0.15));
-  const rFsr = insoleR.packet
-    ? toFsr(insoleR.packet.avg)
-    : [0.45, 0.5, 0.32, 0.65, 0.82].map((v, i) => Math.min(1, v + Math.cos((tick + i) / 2) * 0.15));
-  // 착지 히트맵 색상 — 실제 인솔일 때만 평균 압력 랭킹(빨강/주황/초록)으로 표시.
-  const lLevels = insoleL.packet ? heatLevels(insoleL.packet.avg) : undefined;
-  const rLevels = insoleR.packet ? heatLevels(insoleR.packet.avg) : undefined;
+  // 실시간 발 압력 분포(연결 시 실데이터·미연결 시 시뮬레이션) + 좌우 균형.
+  const { lFsr, rFsr, balance } = useFootPressure(tick);
 
   // 러닝 중 1분 간격으로 AI 코칭 생성(연결된 인솔의 발 데이터 포함) → 코치 카드에 표시.
   const liveCoaching = useLiveCoaching(paused, () => {
@@ -57,17 +51,6 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
       hitmapJson: packet ? { avg: packet.avg } : null,
     };
   });
-
-  // 좌우 밸런스 — 양발 인솔 total 압력 비율(둘 다 연결 시), 아니면 목업.
-  const balance = (() => {
-    const lt = insoleL.packet?.total ?? 0;
-    const rt = insoleR.packet?.total ?? 0;
-    if (insoleL.packet && insoleR.packet && lt + rt > 0) {
-      const lp = Math.round((lt / (lt + rt)) * 100);
-      return `${lp} / ${100 - lp}`;
-    }
-    return '49 / 51';
-  })();
 
   // 착지 패턴 — 인솔 압력 분포에서 앞꿈치/중족/뒤꿈치 중 우세 영역(연결 시), 아니면 목업.
   const landing = (() => {
@@ -130,8 +113,8 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
             <Text className="text-[11px] text-purple-200">균형 {balance}</Text>
           </View>
           <View className="flex-row justify-center gap-[36px]">
-            <FootPressure side="L" fsr={lFsr} levels={lLevels} />
-            <FootPressure side="R" fsr={rFsr} levels={rLevels} />
+            <FootPressure side="L" fsr={lFsr} />
+            <FootPressure side="R" fsr={rFsr} />
           </View>
         </RSCard>
       </View>
@@ -264,48 +247,3 @@ const FormGauge = ({ score }: { score: number }) => {
   );
 };
 
-const FOOT_POSITIONS = [
-  { x: 30, y: 18 },
-  { x: 50, y: 22 },
-  { x: 32, y: 60 },
-  { x: 50, y: 60 },
-  { x: 40, y: 100 },
-];
-
-// 아날로그 10bit 기준으로 FSR 평균 압력을 0~1 로 정규화.
-const FSR_MAX = 1023;
-const toFsr = (avg: number[]): number[] => avg.map((v) => Math.max(0, Math.min(1, v / FSR_MAX)));
-
-// levels(실제 인솔 착지 히트맵 색상)가 있으면 그 색을, 없으면 기존 크기 기반 색을 쓴다.
-const FootPressure = ({ side, fsr, levels }: { side: 'L' | 'R'; fsr: number[]; levels?: HeatLevel[] }) => (
-  <View className="items-center">
-    <Text className="text-[10px] text-t3 mb-[6px] tracking-[0.8px] font-semibold">
-      {side === 'L' ? '왼발' : '오른발'}
-    </Text>
-    <Svg width={80} height={130} viewBox="0 0 80 130">
-      <Path
-        d="M40 8 C56 8 64 22 64 40 C64 52 60 60 58 70 C58 80 60 92 58 104 C56 116 50 122 40 122 C30 122 24 116 22 104 C20 92 22 80 22 70 C20 60 16 52 16 40 C16 22 24 8 40 8 Z"
-        fill="rgba(167,139,250,0.06)"
-        stroke="rgba(167,139,250,0.25)"
-        strokeWidth={0.8}
-      />
-      {fsr.map((v, i) => {
-        const p = FOOT_POSITIONS[i];
-        const radius = 6 + v * 7;
-        const color = levels
-          ? HEAT_COLORS[levels[i]]
-          : v > 0.7
-            ? '#ef4444'
-            : v > 0.45
-              ? '#fbbf24'
-              : '#a78bfa';
-        return (
-          <G key={i}>
-            <Circle cx={p.x} cy={p.y} r={radius + 4} fill={color} opacity={0.18} />
-            <Circle cx={p.x} cy={p.y} r={radius} fill={color} opacity={0.85} />
-          </G>
-        );
-      })}
-    </Svg>
-  </View>
-);

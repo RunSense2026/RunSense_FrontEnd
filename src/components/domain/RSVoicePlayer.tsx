@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import Video, { type VideoRef, type OnLoadData, type OnProgressData } from 'react-native-video';
 import Svg, { Path } from 'react-native-svg';
@@ -8,6 +8,8 @@ interface RSVoicePlayerProps {
   uri: string;
   /** 라벨 (기본: "AI 코치 음성") */
   label?: string;
+  /** uri 가 바뀌면 자동으로 재생을 시작한다 (실시간 코칭 음성용) */
+  autoPlay?: boolean;
 }
 
 // mm:ss
@@ -20,14 +22,22 @@ const fmt = (sec: number): string => {
 
 // AI 코칭 음성 재생 플레이어 — 보라색 코치 카드(어두운 배경) 위에 얹는 용도.
 // react-native-video 를 오디오 전용(0px)으로 렌더링하고 재생/일시정지·진행률만 노출한다.
-export const RSVoicePlayer = ({ uri, label = 'AI 코치 음성' }: RSVoicePlayerProps) => {
+export const RSVoicePlayer = ({ uri, label = 'AI 코치 음성', autoPlay = false }: RSVoicePlayerProps) => {
   const ref = useRef<VideoRef>(null);
-  const [paused, setPaused] = useState(true);
+  const [paused, setPaused] = useState(!autoPlay);
   const [duration, setDuration] = useState(0);
   const [current, setCurrent] = useState(0);
   const [ended, setEnded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+
+  // 새 음성(uri 변경) 도착 시 상태를 초기화하고, autoPlay 면 곧바로 재생한다.
+  useEffect(() => {
+    setError(false);
+    setEnded(false);
+    setCurrent(0);
+    setPaused(!autoPlay);
+  }, [uri, autoPlay]);
 
   const toggle = () => {
     if (error) return;
