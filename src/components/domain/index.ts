@@ -12,3 +12,4 @@ export { AuthShell, AEBackButton } from './AuthShell';
 export { AEField } from './AEField';
 export { DarkShell, DarkNavHeader } from './DarkShell';
 export { LightShell } from './LightShell';
+export { WeatherIcon, deriveWeatherCondition, findPty, conditionLabel, type WeatherCondition } from './WeatherIcon';

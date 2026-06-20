@@ -20,7 +20,14 @@ export interface WeatherItem {
   baseDate: string;
   baseTime: string;
   category: string;
-  obsrValue: string;
+  /** 초단기실황(getUltraSrtNcst) 관측값 */
+  obsrValue?: string;
+  /** 초단기예보(getUltraSrtFcst) 예보값 */
+  fcstValue?: string;
+  /** 초단기예보 예보시각 (HHmm) */
+  fcstTime?: string;
+  /** 초단기예보 예보일자 (YYYYMMDD) */
+  fcstDate?: string;
   nx: number;
   ny: number;
 }

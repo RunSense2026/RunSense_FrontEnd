@@ -3,10 +3,10 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator, type DimensionVal
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 
-import { LightShell } from '@/components/domain';
-import { fetchWeatherData, fetchAirQualityData } from '@/api';
+import { LightShell, WeatherIcon, deriveWeatherCondition, findPty, type WeatherCondition } from '@/components/domain';
+import { fetchWeatherData, fetchAirQualityData, fetchSkyCode } from '@/api';
+import { useResolvedLocation, type ResolvedLocation } from '@/hooks/useResolvedLocation';
 import { gradients } from '@/theme/tokens';
-import { DEFAULT_LOCATION } from '@/constants/location';
 
 import type { WeatherItem } from '@/types/publicApi';
 import type { TabScreenProps } from '@/types/navigation';
@@ -23,6 +23,10 @@ const COURSES = [
 export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [courseSort, setCourseSort] = useState<CourseSort>('score');
+
+  // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백). 새로고침 시 재조회.
+  const location = useResolvedLocation(refreshKey);
+
   const maxScore = Math.max(...COURSES.map((c) => c.score));
   const sortedCourses = [...COURSES].sort((a, b) =>
     courseSort === 'name' ? a.name.localeCompare(b.name) : b.score - a.score,
@@ -35,7 +39,7 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
         <View className="flex-row justify-between items-start py-1 pb-[14px]">
           <View>
             <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              📍 {DEFAULT_LOCATION.NAME}
+              AI 추천
             </Text>
             <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>
               오늘의 추천 코스
@@ -57,7 +61,7 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
           </Pressable>
         </View>
 
-        <AirQualityCard refreshKey={refreshKey} />
+        <AirQualityCard location={location} />
         <MapCard />
 
         <View className="flex-row justify-between items-baseline mt-[18px] mb-[10px]" style={{ zIndex: 20 }}>
@@ -138,23 +142,33 @@ const CourseSortDropdown = ({
   );
 };
 
-const AirQualityCard = ({ refreshKey }: { refreshKey: number }) => {
+const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
+  const [condition, setCondition] = useState<WeatherCondition>('sunny');
   const [airData, setAirData] = useState<{ value: string; label: string; grade: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { nx, ny, station, name: locationName, ready } = location;
+
   useEffect(() => {
+    // 위치 해석이 끝난 뒤에 날씨/대기질을 조회한다.
+    if (!ready) return;
+
+    let cancelled = false;
     const getCourseData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const [weather, air] = await Promise.all([
-          fetchWeatherData(DEFAULT_LOCATION.NX, DEFAULT_LOCATION.NY),
-          fetchAirQualityData(DEFAULT_LOCATION.STATION_NAME),
+        const [weather, air, sky] = await Promise.all([
+          fetchWeatherData(nx, ny),
+          fetchAirQualityData(station),
+          fetchSkyCode(nx, ny),
         ]);
+        if (cancelled) return;
 
         setWeatherItems(weather);
+        setCondition(deriveWeatherCondition(findPty(weather), sky));
 
         if (air) {
           const grade = air.pm25Grade || air.khaiGrade || '2';
@@ -172,14 +186,17 @@ const AirQualityCard = ({ refreshKey }: { refreshKey: number }) => {
           setAirData({ value: displayValue, label, grade });
         }
       } catch (err) {
-        setError('날씨/대기질 정보를 불러오지 못했습니다.');
+        if (!cancelled) setError('날씨/대기질 정보를 불러오지 못했습니다.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     getCourseData();
-  }, [refreshKey]);
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, nx, ny, station]);
 
   if (loading) {
     return (
@@ -245,6 +262,15 @@ const AirQualityCard = ({ refreshKey }: { refreshKey: number }) => {
         borderColor: 'rgba(124,58,237,0.14)',
       }}
     >
+      {/* 현재 위치 — 카드 안 상단에 표시 (지역명이 길어도 카드 폭 안에서 줄바꿈) */}
+      <Text
+        className="text-[12px] font-semibold mb-[10px]"
+        style={{ color: '#7c6bb5' }}
+        numberOfLines={2}
+      >
+        {locationName}
+      </Text>
+
       <View className="flex-row justify-between items-start mb-3">
         <View className="flex-1">
           <Text className="text-[10px] font-bold tracking-[0.8px] uppercase" style={{ color: '#9b8cc5' }}>
@@ -264,12 +290,7 @@ const AirQualityCard = ({ refreshKey }: { refreshKey: number }) => {
           <Text className="text-[11px] mt-1 font-medium" style={{ color: '#6b5ca5' }}>{descText}</Text>
         </View>
 
-        <LinearGradient
-          colors={['#fbbf24', '#f59e0b']}
-          start={{ x: 0.35, y: 0.35 }}
-          end={{ x: 1, y: 1 }}
-          style={{ width: 56, height: 56, borderRadius: 28 }}
-        />
+        <WeatherIcon condition={condition} size={56} />
       </View>
 
       {/* PM scale */}

@@ -5,12 +5,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-import { fetchWeatherData, fetchAirQualityData, reverseGeocodeKo, readAllRuns, readRunsByDate } from '@/api';
-import { ensureLocationPermission, getCurrentPosition } from '@/utils/geo';
-import { latLonToGrid } from '@/utils/kmaGrid';
+import { fetchWeatherData, fetchAirQualityData, fetchSkyCode, readAllRuns, readRunsByDate } from '@/api';
+import { WeatherIcon, deriveWeatherCondition, findPty, conditionLabel, type WeatherCondition } from '@/components/domain';
+import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useAuthStore } from '@/stores/authStore';
 import { useWeeklyGoalStore } from '@/stores/weeklyGoalStore';
-import { DEFAULT_LOCATION } from '@/constants/location';
 import type { WeatherItem } from '@/types/publicApi';
 import type { RunningActivityResponseDto } from '@/types/api';
 import type { HomeScreenProps } from '@/types/navigation';
@@ -26,23 +25,6 @@ const getGreeting = (): string => {
   if (h >= 12 && h < 18) return '좋은 오후예요 🌤️';
   if (h >= 18 && h < 22) return '좋은 저녁이에요 🌙';
   return '편안한 밤이에요 🌙';
-};
-
-// 기상청 PTY(강수형태) 코드 → 날씨 라벨 (0/없음: 맑음)
-const ptyLabel = (pty?: string): string => {
-  switch (pty) {
-    case '1':
-    case '5':
-      return '비';
-    case '2':
-    case '6':
-      return '비/눈';
-    case '3':
-    case '7':
-      return '눈';
-    default:
-      return '맑음';
-  }
 };
 
 export const HomeScreen = ({ navigation }: HomeScreenProps) => {
@@ -113,41 +95,32 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
 // ─── Air quality + weather card ──────────────────────────────────
 const AirWeatherCard = () => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
+  const [condition, setCondition] = useState<WeatherCondition>('sunny');
   const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
-  const [locationName, setLocationName] = useState<string>(DEFAULT_LOCATION.NAME);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const getPublicData = async () => {
-      // 1) GPS 로 실제 위치 해석 → 기상청 격자/측정소/지역명. (실패 시 기본 위치로 폴백)
-      let nx: number = DEFAULT_LOCATION.NX;
-      let ny: number = DEFAULT_LOCATION.NY;
-      let station: string = DEFAULT_LOCATION.STATION_NAME;
-      try {
-        if (await ensureLocationPermission()) {
-          const { lat, lon } = await getCurrentPosition();
-          const grid = latLonToGrid(lat, lon);
-          nx = grid.nx;
-          ny = grid.ny;
-          const place = await reverseGeocodeKo(lat, lon).catch(() => null);
-          if (place) {
-            setLocationName(place.name);
-            if (place.gu) station = place.gu;
-          }
-        }
-      } catch {
-        // GPS/역지오코딩 실패 → 기본 위치(강남구)로 조회
-      }
+  // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백)
+  const { nx, ny, station, name: locationName, ready } = useResolvedLocation();
 
-      // 2) 해석된 위치로 날씨/대기질 조회
+  useEffect(() => {
+    // 위치 해석이 끝난 뒤에 날씨/대기질을 조회한다.
+    if (!ready) return;
+
+    let cancelled = false;
+    const getPublicData = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const [weather, air] = await Promise.all([
+        const [weather, air, sky] = await Promise.all([
           fetchWeatherData(nx, ny),
           fetchAirQualityData(station),
+          fetchSkyCode(nx, ny),
         ]);
+        if (cancelled) return;
 
         setWeatherItems(weather);
+        setCondition(deriveWeatherCondition(findPty(weather), sky));
 
         // 에어코리아 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따른 UI 매핑
         if (air) {
@@ -175,13 +148,16 @@ const AirWeatherCard = () => {
           });
         }
       } catch (error) {
-        setError('날씨/대기질 정보를 불러오지 못했습니다.');
+        if (!cancelled) setError('날씨/대기질 정보를 불러오지 못했습니다.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     getPublicData();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, nx, ny, station]);
 
   // 로딩 중일 때 스켈레톤 UI 또는 ActivityIndicator 표시
   if (loading) {
@@ -206,7 +182,7 @@ const AirWeatherCard = () => {
   const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
   const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '45';
   const wind = weatherItems.find((i) => i.category === 'WSD')?.obsrValue ?? '2';
-  const sky = ptyLabel(weatherItems.find((i) => i.category === 'PTY')?.obsrValue);
+  const sky = conditionLabel(condition);
 
   // 대기질 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
   const airValue = airData?.value ?? '32';
@@ -234,17 +210,8 @@ const AirWeatherCard = () => {
           <Text className="text-[14px] font-medium" style={{ color: '#9b8cc5' }}>{sky}</Text>
         </View>
       </View>
-      <View className="w-[60px] h-[60px] relative justify-center items-center">
-        <LinearGradient
-          colors={['#fbbf24', '#f59e0b']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ width: 44, height: 44, borderRadius: 22 }}
-        />
-        <View
-          className="absolute bottom-[8px] left-[0px] w-[32px] h-[16px] rounded-full"
-          style={{ backgroundColor: '#ffffff' }}
-        />
+      <View className="w-[60px] h-[60px] justify-center items-center">
+        <WeatherIcon condition={condition} size={56} />
       </View>
     </View>
 
