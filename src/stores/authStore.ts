@@ -30,8 +30,22 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   setSession: (login) => {
     setTokens(login.accessToken, login.refreshToken);
-    persistSession({ userId: login.userID, userName: login.userName, email: login.email });
+    // 이름·이메일·가입일·러닝 횟수·거리까지 모두 영구 저장 → 자동 로그인 시 그대로 복원한다.
+    persistSession({
+      userId: login.userID,
+      userName: login.userName,
+      email: login.email,
+      createdAt: login.createdAt,
+      runCount: login.totalCount,
+      totalDistanceKm: login.totalDistance,
+    });
     syncProfile(login.userName, login.email);
+    // 로그인 응답의 계정 통계(가입일·횟수·거리)를 프로필 스토어에 시드한다. (설정 화면에서 최신값으로 갱신)
+    useProfileStore.getState().setStats({
+      joinedAt: login.createdAt ?? null,
+      runCount: login.totalCount ?? null,
+      totalDistanceKm: login.totalDistance ?? null,
+    });
     set({
       userId: login.userID,
       userName: login.userName,
@@ -41,6 +55,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   restoreSession: (s) => {
     syncProfile(s.userName, s.email);
+    // 자동 로그인 시 저장해 둔 가입일·횟수·거리를 함께 복원한다. (설정 화면에서 최신값으로 갱신)
+    useProfileStore.getState().setStats({
+      joinedAt: s.createdAt ?? null,
+      runCount: s.runCount ?? null,
+      totalDistanceKm: s.totalDistanceKm ?? null,
+    });
     set({ userId: s.userId, userName: s.userName, email: s.email, isAuthenticated: true });
   },
   clearSession: () => {

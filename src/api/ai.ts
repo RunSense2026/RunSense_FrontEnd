@@ -60,7 +60,6 @@ const fromResponseWire = (wire: CoachingResponseWire): AiCoachingResultDto => ({
 const fromVoiceResponseWire = (
   wire: CoachingWithVoiceResponseWire,
 ): AiCoachingWithVoiceDto => ({
-  coachingId: wire.coaching_id,
   feedbackText: wire.feedback_text,
   focusPoint: wire.focus_point,
   recExercise: wire.rec_exercise,
@@ -86,10 +85,11 @@ const fromReportWire = (wire: CoachingReportResponseWire): AiCoachingReportDto =
 export const createCoaching = async (
   body: AiCoachingRequestDto,
 ): Promise<AiCoachingWithVoiceDto> => {
-  const res = await aiClient.post<CoachingWithVoiceResponseWire>(
-    '/ai/coaching',
-    toRequestWire(body),
-  );
+  const wire = toRequestWire(body);
+  // [임시 진단] 실시간 코칭 요청/응답 페이로드 확인용. 원인 파악 후 제거할 것.
+  if (__DEV__) console.log('[ai/coaching] 요청 →', JSON.stringify(wire));
+  const res = await aiClient.post<CoachingWithVoiceResponseWire>('/ai/coaching', wire);
+  if (__DEV__) console.log('[ai/coaching] 응답 ←', JSON.stringify(res.data));
   return fromVoiceResponseWire(res.data);
 };
 

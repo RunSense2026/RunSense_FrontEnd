@@ -171,16 +171,36 @@ const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
         setCondition(deriveWeatherCondition(findPty(weather), sky));
 
         if (air) {
-          const grade = air.pm25Grade || air.khaiGrade || '2';
-          let label = '보통'; // 기본 2등급
-          if (grade === '1') label = '좋음'; // 1등급 (초록색)
-          else if (grade === '2') label = '보통'; // 2등급 (노란색)
-          else if (grade === '3') label = '나쁨';
-          else if (grade === '4') label = '매우 나쁨'; // 4등급 (빨간색)
-
           let displayValue = air.pm25Value;
           if (!displayValue || displayValue === '-') {
             displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
+          }
+
+          const numericVal = parseInt(displayValue, 10);
+          let grade = '2';
+          let label = '보통';
+
+          if (!isNaN(numericVal)) {
+            if (numericVal <= 15) {
+              grade = '1';
+              label = '좋음';
+            } else if (numericVal <= 35) {
+              grade = '2';
+              label = '보통';
+            } else if (numericVal <= 75) {
+              grade = '3';
+              label = '나쁨';
+            } else {
+              grade = '4';
+              label = '매우 나쁨';
+            }
+          } else {
+            // 수치가 숫자가 아닐 시 API에서 온 등급 사용
+            grade = air.pm25Grade || air.khaiGrade || '2';
+            if (grade === '1') label = '좋음';
+            else if (grade === '2') label = '보통';
+            else if (grade === '3') label = '나쁨';
+            else if (grade === '4') label = '매우 나쁨';
           }
 
           setAirData({ value: displayValue, label, grade });

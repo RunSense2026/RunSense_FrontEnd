@@ -8,7 +8,7 @@ import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
 import { useInsoleStore } from '@/stores/insoleStore';
-import { cadenceFromSteps, HEEL_INDEX } from '@/utils/insoleMetrics';
+import { cadenceFromSteps, footCoachingFields } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -20,7 +20,7 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
   const [endOpen, setEndOpen] = useState(false);
 
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
-  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
+  const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
   const form = 84 + Math.round(Math.sin(tick / 5) * 2);
   const zone = hrZone(hr, 164);
@@ -40,15 +40,14 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
   const { lFsr, rFsr, balance } = useFootPressure(tick);
 
   // 러닝 중 1분 간격으로 AI 코칭 생성(연결된 인솔의 발 데이터 포함) → 코치 카드에 표시.
-  const liveCoaching = useLiveCoaching(paused, () => {
-    const packet = insoleL.packet ?? insoleR.packet;
+  // 발 압력은 직전 60초 구간 평균을 footCoachingFields 가 0~100 정규화해 채운다.
+  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => {
+    const { L, R } = useInsoleStore.getState().drainFootAverages();
     return {
       pace: spkToMinutes(paceSpk),
       heartRate: hr,
       cadence: cad,
-      footSide: packet ? (insoleL.packet ? 'Left' : 'Right') : null,
-      heelStrikeRate: packet ? packet.avg[HEEL_INDEX] : null,
-      hitmapJson: packet ? { avg: packet.avg } : null,
+      ...footCoachingFields(L, R),
     };
   });
 
@@ -167,7 +166,7 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
         onConfirm={() => {
           setEndOpen(false);
           navigation.navigate('Report', {
-            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad, formScore: form },
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad, formScore: form, splits, coachings: collectedCoachings },
           });
         }}
       />

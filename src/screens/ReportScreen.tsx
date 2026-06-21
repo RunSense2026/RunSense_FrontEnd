@@ -6,7 +6,8 @@ import { isAxiosError } from 'axios';
 import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
-import { saveRun, readRun, createCoachingReport, readCoachingReport } from '@/api';
+import { FOOT_PATH, footPositions } from '@/components/domain/FootPressure';
+import { saveRun, readRun, deleteRun, createCoachingReport, readCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
   RunningActivityCreateRequestDto,
@@ -55,6 +56,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
   const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [deleting, setDeleting] = useState(false);
 
   // History 등에서 activityId 로 들어오면 해당 기록을 상세 조회한다.
   const activityId = route.params?.activityId;
@@ -109,8 +111,14 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     };
   }, [activityId]);
 
-  // 우선순위: 저장된 상세 → 갓 뛴 세션 값 → 목업(MOCK_RUN)
-  const summary = detail
+  // 저장된 기록을 기록 탭에서 연 직후, 상세가 도착하기 전(렌더링 전) 구간.
+  // 이때만 하드코딩 목업 대신 '--' 를 표시하고, 로딩이 끝나면 평소처럼(목업 폴백 포함) 렌더한다.
+  const loadingSaved = activityId != null && !detail;
+
+  // 우선순위: 로딩 중 '--' → 저장된 상세 → 갓 뛴 세션 값 → 목업(MOCK_RUN)
+  const summary = loadingSaved
+    ? { distance: '--', time: '--', pace: '--' }
+    : detail
     ? { distance: detail.distance.toFixed(2), time: detail.time.replace(/^00:/, ''), pace: detail.pace }
     : {
         distance: (runSummary?.distanceKm ?? MOCK_RUN.distanceKm).toFixed(2),
@@ -118,22 +126,30 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         pace: fmtPace(runSummary?.paceSpk ?? MOCK_RUN.paceSpk),
       };
 
-  const splits = detail
+  // 총 거리(숫자). 1km 이하 러닝은 스플릿 페이스를 제공하지 않는다.
+  const distanceKm = detail?.distance ?? runSummary?.distanceKm ?? null;
+  const showSplits = distanceKm != null && distanceKm > 1;
+
+  // 스플릿 막대 색상의 기준이 되는 평균 페이스(초/km).
+  const avgPaceSec = detail ? paceToSeconds(detail.pace) : runSummary?.paceSpk ?? null;
+
+  // 구간 페이스는 실데이터에서만 가져온다: 저장된 기록은 lapSplits, 갓 뛴 러닝은 세션이 수집한 splits.
+  const splits: Split[] = detail
     ? detail.lapSplits
         .slice()
         .sort((a, b) => a.lapNumber - b.lapNumber)
         .map((s) => ({ km: Number(s.lapNumber), pace: paceToSeconds(s.lapPace), label: s.lapPace }))
-    : SPLITS;
+    : (runSummary?.splits ?? []).map((s) => ({ km: s.km, pace: s.paceSec, label: fmtPace(s.paceSec) }));
 
   // AI 요약 리포트가 있으면 그 항목을, 없으면 백엔드 러닝 상세의 코칭으로 폴백한다.
   // (둘 다 없으면 CoachSummaryCard 내부 목업이 표시된다.)
   const coachTitle = report?.summaryTitle;
   const coachItems = report
-    ? report.items.map((it) => ({
+    ? report.items?.map((it) => ({
         title: it.title,
         body: it.recExercise ? `${it.description} (추천: ${it.recExercise})` : it.description,
       }))
-    : detail?.aiCoachings.map((c) => ({
+    : detail?.aiCoachings?.map((c) => ({
         title: c.focusPoint,
         body: c.recExercise ? `${c.feedbackText} (추천: ${c.recExercise})` : c.feedbackText,
       }));
@@ -188,6 +204,31 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     void runSaveAndReport({ silent: false });
   };
 
+  // 휴지통 아이콘(저장된 기록 삭제) — 확인 후 백엔드에서 삭제하고 이전 화면(기록 탭)으로 돌아간다.
+  const handleDelete = () => {
+    if (activityId == null || deleting) return;
+    Alert.alert('러닝 기록 삭제', '이 러닝 기록을 삭제할까요? 되돌릴 수 없어요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await deleteRun(activityId);
+            navigation.goBack();
+          } catch (e) {
+            setDeleting(false);
+            const message = isAxiosError(e)
+              ? e.response?.data?.message ?? '러닝 기록 삭제에 실패했어요.'
+              : '삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+            Alert.alert('삭제 실패', message);
+          }
+        },
+      },
+    ]);
+  };
+
   // 갓 뛴 리포트(activityId 없음)로 진입하면 — 러닝 종료 직후 — 기록을 자동 저장하고
   // AI 코칭/음성을 생성한다. 로그인 상태에서 한 번만 실행한다. (비로그인 시 수동 버튼으로 유도)
   const autoSavedRef = useRef(false);
@@ -220,7 +261,12 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         <View className="flex-row justify-between items-center py-2">
           <View>
             <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              {detail ? formatHeaderDate(detail.activityDate) : '5월 3일 (일) · 오전 7:14'}
+              {/* 저장된 기록은 API 날짜, 갓 뛴 리포트는 로컬 현재 날짜, 저장 기록 로딩 중에는 '--' */}
+              {detail
+                ? formatHeaderDate(detail.activityDate)
+                : isViewingSaved
+                ? '--'
+                : formatHeaderDate(new Date().toISOString())}
             </Text>
             <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>
               러닝 리포트
@@ -243,14 +289,19 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
                 )}
               </IconBtn>
             )}
-            <IconBtn>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Circle cx={12} cy={12} r={3} stroke="#7c3aed" strokeWidth={2} />
-                <Circle cx={6} cy={6} r={2} stroke="#7c3aed" strokeWidth={2} />
-                <Circle cx={18} cy={18} r={2} stroke="#7c3aed" strokeWidth={2} />
-                <Path d="M9 12l9-5M9 13l9 4" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            </IconBtn>
+            {/* 삭제 버튼은 저장된 기록(기록 탭에서 진입)에서만 노출 */}
+            {isViewingSaved && (
+              <IconBtn onPress={handleDelete} disabled={deleting}>
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#dc2626" />
+                ) : (
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#dc2626" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M10 11v6M14 11v6" stroke="#dc2626" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                )}
+              </IconBtn>
+            )}
           </View>
         </View>
 
@@ -265,8 +316,8 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
           <Text className="text-[12px] font-medium py-3" style={{ color: '#b45309' }}>{detailError}</Text>
         )}
 
-        {/* Achievement banner — 갓 뛴 리포트에서만 */}
-        {!isViewingSaved && (
+        {/* Achievement banner — 갓 뛴 리포트이면서 5km 이상 달렸을 때만 */}
+        {!isViewingSaved && distanceKm != null && distanceKm >= 5 && (
           <LinearGradient
             colors={['#7c3aed', '#6d28d9', '#3b82f6']}
             locations={[0, 0.4, 1]}
@@ -304,25 +355,27 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
           <SummaryCard label="평균 페이스" value={summary.pace} tint="#3b82f6" />
         </View>
 
-        <ReportCard title="스플릿 페이스" subtitle="km별 구간 페이스">
-          <SplitsChart splits={splits} />
-        </ReportCard>
+        {showSplits && (
+          <ReportCard title="스플릿 페이스" subtitle="km별 구간 페이스">
+            <SplitsChart splits={splits} avgPaceSec={avgPaceSec} />
+          </ReportCard>
+        )}
 
         <ReportCard title="착지 히트맵" subtitle="발바닥 압력 분포">
-          <FootHeatmap />
+          <FootHeatmap footSensorData={detail?.footSensorData} loading={loadingSaved} />
         </ReportCard>
 
         <ReportCard title="프로네이션 분석" subtitle="발의 회내·회외 정도">
-          <Pronation footSensorData={detail?.footSensorData} />
+          <Pronation footSensorData={detail?.footSensorData} loading={loadingSaved} />
         </ReportCard>
 
-        <CoachSummaryCard title={coachTitle} items={coachItems} generating={reportGenerating} />
+        <CoachSummaryCard title={coachTitle} items={coachItems} generating={reportGenerating} loading={loadingSaved} />
 
         <View className="flex-row gap-2 mt-3 flex-wrap">
-          <ReportMini label="평균 심박" value={String(runSummary?.avgHeartRate ?? MOCK_RUN.avgHeartRate)} unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
-          <ReportMini label="케이던스" value={String(runSummary?.cadence ?? MOCK_RUN.cadence)} unit="spm" trend="▲ 적정 범위" trendColor="#10b981" />
-          <ReportMini label="고도 변화" value="+24" unit="m" trend="평지 코스" trendColor="#7c3aed" />
-          <ReportMini label="칼로리" value="312" unit="kcal" trend="목표 87%" trendColor="#7c3aed" />
+          <ReportMini label="평균 심박" value={loadingSaved ? '--' : String(runSummary?.avgHeartRate ?? MOCK_RUN.avgHeartRate)} unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
+          <ReportMini label="케이던스" value={loadingSaved ? '--' : String(runSummary?.cadence ?? MOCK_RUN.cadence)} unit="spm" trend="▲ 적정 범위" trendColor="#10b981" />
+          <ReportMini label="고도 변화" value={loadingSaved ? '--' : '+24'} unit="m" trend="평지 코스" trendColor="#7c3aed" />
+          <ReportMini label="칼로리" value={loadingSaved ? '--' : '312'} unit="kcal" trend="목표 87%" trendColor="#7c3aed" />
         </View>
       </ScrollView>
       <RSTabBar active="log" onChange={handleTabPress} />
@@ -356,61 +409,48 @@ const IconBtn = ({
 // 러닝 저장 요청 본문을 구성한다. 실제 세션 값(run)이 있으면 상위 지표(거리·시간·페이스·폼)는
 // 그 값으로 채우고, 구간/발센서 등 세부 항목은 (아직 실데이터가 없어) 목업으로 둔다.
 const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto => {
-  const minPace = Math.min(...SPLITS.map((s) => s.pace));
-  const maxPace = Math.max(...SPLITS.map((s) => s.pace));
-  const range = maxPace - minPace || 1;
-  const paceStatue = (pace: number): string => {
-    const t = (pace - minPace) / range;
-    if (t < 0.33) return 'Green';
-    if (t < 0.66) return 'Yellow';
+  // 평균 페이스(초/km) 대비 편차로 구간 상태를 정한다: ±30초 Green, ±1분 Yellow, 1분 초과 Red.
+  const avgPaceSec = run?.paceSpk ?? 0;
+  const paceStatue = (paceSec: number): string => {
+    const dev = Math.abs(paceSec - avgPaceSec);
+    if (dev <= 30) return 'Green';
+    if (dev <= 60) return 'Yellow';
     return 'Red';
   };
+
+  // 러닝 중 수집한 실제 km별 구간. 백엔드는 최대 5개만 받으므로 앞쪽 5개까지 전송한다.
+  const liveSplits = (run?.splits ?? []).slice(0, 5);
 
   return {
     distance: run?.distanceKm ?? MOCK_RUN.distanceKm,
     time: secToHms(run?.durationSec ?? MOCK_RUN.durationSec),
     pace: spkToPace(run?.paceSpk ?? MOCK_RUN.paceSpk),
     formScore: run?.formScore ?? MOCK_RUN.formScore,
-    lapSplits: SPLITS.map((s) => ({
+    lapSplits: liveSplits.map((s) => ({
       lapNumber: s.km,
-      lapPace: s.label.replace(/"/g, ''),
-      avgHeartRate: 150 + s.km,
-      paceStatue: paceStatue(s.pace),
+      lapPace: spkToPace(s.paceSec),
+      avgHeartRate: run?.avgHeartRate ?? 0,
+      paceStatue: paceStatue(s.paceSec),
     })),
     footSensorData: [
       {
         footSide: 'Left',
         pronationType: '약간 과내전',
         heelStrikeRate: 62,
-        hitmapJson: JSON.stringify({ heel: 40, midfoot: 35, forefoot: 25 }),
+        hitmapJson: JSON.stringify({ forefoot_left: 20, forefoot_right: 25, midfoot_left: 18, midfoot_right: 17, heel: 46 }),
       },
       {
         footSide: 'Right',
         pronationType: '중립',
         heelStrikeRate: 58,
-        hitmapJson: JSON.stringify({ heel: 38, midfoot: 36, forefoot: 26 }),
+        hitmapJson: JSON.stringify({ forefoot_left: 23, forefoot_right: 22, midfoot_left: 19, midfoot_right: 18, heel: 44 }),
       },
     ],
-    // NOTE: 실시간 코칭(AI 서버 POST /ai/coaching, LLM)이 현재 500 오류라 진짜 코칭이
-    // 생성되지 않는다. 그동안 요약 리포트가 비지 않도록 임시 목업 코칭을 저장한다.
-    // 서버 /ai/coaching 정상화 후 실시간 코칭으로 대체할 것.
-    aiCoachings: [
-      {
-        feedbackText: '3km까지 평균 페이스를 일관되게 유지했어요. 호흡 리듬이 좋았어요.',
-        focusPoint: '안정적인 페이스 유지',
-        recExercise: '현재 페이스 유지 훈련',
-      },
-      {
-        feedbackText: '4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요.',
-        focusPoint: '후반 피로 누적',
-        recExercise: '지구력 인터벌 훈련',
-      },
-      {
-        feedbackText: '왼발 약간 과내전. 발목 강화 운동을 추천드려요.',
-        focusPoint: '왼발 프로네이션 주의',
-        recExercise: '카프 레이즈',
-      },
-    ],
+    aiCoachings: (run?.coachings ?? []).map((c) => ({
+      feedbackText: c.feedbackText,
+      focusPoint: c.focusPoint ?? '',
+      recExercise: c.recExercise ?? '',
+    })),
   };
 };
 
@@ -460,15 +500,7 @@ interface Split {
   label: string;
 }
 
-const SPLITS: Split[] = [
-  { km: 1, pace: 322, label: "5'22\"" },
-  { km: 2, pace: 318, label: "5'18\"" },
-  { km: 3, pace: 326, label: "5'26\"" },
-  { km: 4, pace: 348, label: "5'48\"" },
-  { km: 5, pace: 364, label: "6'04\"" },
-];
-
-const SplitsChart = ({ splits }: { splits: Split[] }) => {
+const SplitsChart = ({ splits, avgPaceSec }: { splits: Split[]; avgPaceSec: number | null }) => {
   if (splits.length === 0) {
     return (
       <View className="py-6 items-center">
@@ -481,10 +513,12 @@ const SplitsChart = ({ splits }: { splits: Split[] }) => {
   const range = maxPace - minPace || 1;
   const maxBar = 100;
 
+  // 평균 페이스 대비 편차로 색을 정한다: ±30초 초록, ±1분 노랑, 1분 초과 빨강.
   const colorFor = (pace: number): [string, string] => {
-    const t = (pace - minPace) / range;
-    if (t < 0.33) return ['#10b981', '#34d399'];
-    if (t < 0.66) return ['#f59e0b', '#fbbf24'];
+    if (avgPaceSec == null) return ['#94a3b8', '#cbd5e1'];
+    const dev = Math.abs(pace - avgPaceSec);
+    if (dev <= 30) return ['#10b981', '#34d399'];
+    if (dev <= 60) return ['#f59e0b', '#fbbf24'];
     return ['#dc2626', '#ef4444'];
   };
 
@@ -512,9 +546,9 @@ const SplitsChart = ({ splits }: { splits: Split[] }) => {
         className="flex-row justify-center gap-3 mt-[10px] pt-[10px]"
         style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(124,58,237,0.08)' }}
       >
-        <LegendDot color="#10b981" label="빠름" />
-        <LegendDot color="#fbbf24" label="평균" />
-        <LegendDot color="#ef4444" label="느림" />
+        <LegendDot color="#10b981" label="±30초" />
+        <LegendDot color="#fbbf24" label="±1분" />
+        <LegendDot color="#ef4444" label="1분 초과" />
       </View>
     </View>
   );
@@ -527,26 +561,87 @@ const LegendDot = ({ color, label }: { color: string; label: string }) => (
   </View>
 );
 
-const FootHeatmap = () => {
-  const left = [
-    { x: 48, y: 18, r: 8, level: 'mid' as const },
-    { x: 30, y: 40, r: 9, level: 'mid' as const },
-    { x: 50, y: 40, r: 11, level: 'high' as const },
-    { x: 40, y: 74, r: 9, level: 'low' as const },
-    { x: 40, y: 108, r: 12, level: 'mid' as const },
-  ];
-  const right = [
-    { x: 32, y: 18, r: 8, level: 'mid' as const },
-    { x: 30, y: 40, r: 11, level: 'high' as const },
-    { x: 50, y: 40, r: 9, level: 'mid' as const },
-    { x: 40, y: 74, r: 9, level: 'low' as const },
-    { x: 40, y: 108, r: 12, level: 'mid' as const },
-  ];
+// 저장 기록 로딩 중(렌더링 전)에 하드코딩 목업 대신 '--' 를 표시한다.
+const NoDataHint = ({ dark }: { dark?: boolean }) => (
+  <View className="py-5 items-center">
+    <Text className="text-[14px] font-bold" style={{ color: dark ? 'rgba(255,255,255,0.75)' : '#9b8cc5' }}>
+      --
+    </Text>
+  </View>
+);
+
+type FootLevel = 'high' | 'mid' | 'low';
+// hitmapJson 의 실제 5개 구간: 앞발 좌/우, 중족 좌/우, 뒤꿈치.
+type FootZone = 'forefoot_left' | 'forefoot_right' | 'midfoot_left' | 'midfoot_right' | 'heel';
+type FootDot = { x: number; y: number; r: number; level: FootLevel };
+
+const FOOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_right', 'midfoot_left', 'midfoot_right', 'heel'];
+
+// 실시간 화면(FootPressure)의 footPositions(엄지·엄지밑·새끼밑·중간·뒤꿈치)와 동일한 점 위치를 쓴다.
+// 각 점에 매칭되는 hitmapJson 구간(색 결정용)과 점 반지름.
+const DOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_left', 'forefoot_right', 'midfoot_left', 'heel'];
+const DOT_RADII = [10, 9, 9, 9, 12];
+
+// 데이터가 없을 때(갓 뛴 리포트 등) 쓰는 목업 압력 분포(%).
+const MOCK_HITMAP: Record<FootZone, number> = {
+  forefoot_left: 20,
+  forefoot_right: 25,
+  midfoot_left: 18,
+  midfoot_right: 17,
+  heel: 46,
+};
+
+// 압력 분포 → 구간별 색 레벨. 각 구간의 점유율(=값/전체합)로 판정한다.
+// 5구간 평균 점유율이 20% 이므로 30%↑ 높음(빨강), 15~30% 보통(노랑), 15%↓ 낮음(초록).
+const zoneLevels = (vals: Record<FootZone, number>): Record<FootZone, FootLevel> => {
+  const total = FOOT_ZONES.reduce((sum, z) => sum + (vals[z] || 0), 0) || 1;
+  const levelFor = (v: number): FootLevel => {
+    const share = v / total;
+    if (share >= 0.3) return 'high';
+    if (share >= 0.15) return 'mid';
+    return 'low';
+  };
+  return {
+    forefoot_left: levelFor(vals.forefoot_left),
+    forefoot_right: levelFor(vals.forefoot_right),
+    midfoot_left: levelFor(vals.midfoot_left),
+    midfoot_right: levelFor(vals.midfoot_right),
+    heel: levelFor(vals.heel),
+  };
+};
+
+// hitmapJson(5키) 파싱. 키가 빠지거나 형식이 어긋나면 null.
+const parseHitmap = (json: string): Record<FootZone, number> | null => {
+  try {
+    const o = JSON.parse(json);
+    const out = {} as Record<FootZone, number>;
+    for (const z of FOOT_ZONES) {
+      const n = Number(o[z]);
+      if (Number.isNaN(n)) return null;
+      out[z] = n;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+};
+
+const FootHeatmap = ({ footSensorData, loading }: { footSensorData?: FootSensorDataResponseDto[]; loading?: boolean }) => {
+  if (loading) return <NoDataHint />;
+
+  // 좌/우 센서의 hitmapJson(5구간)으로 실제 압력 색을 칠한다. 데이터가 없으면 목업으로 폴백.
+  // 점 위치는 실시간 화면과 동일한 footPositions 를 쓰고, 각 점에 해당 구간 색을 입힌다.
+  const dotsFor = (side: 'L' | 'R', re: RegExp): FootDot[] => {
+    const data = footSensorData?.find((f) => re.test(f.footSide));
+    const levels = zoneLevels((data && parseHitmap(data.hitmapJson)) || MOCK_HITMAP);
+    return footPositions(side).map((p, i) => ({ x: p.x, y: p.y, r: DOT_RADII[i], level: levels[DOT_ZONES[i]] }));
+  };
+
   return (
     <View>
       <View className="flex-row justify-center gap-7">
-        <FootSvg side="L" dots={left} />
-        <FootSvg side="R" dots={right} />
+        <FootSvg side="L" dots={dotsFor('L', /left|왼/i)} />
+        <FootSvg side="R" dots={dotsFor('R', /right|오른/i)} />
       </View>
       <View
         className="flex-row justify-center gap-[14px] mt-3 pt-[10px]"
@@ -554,7 +649,7 @@ const FootHeatmap = () => {
       >
         <LegendDot color="#ef4444" label="높음" />
         <LegendDot color="#f59e0b" label="보통" />
-          <LegendDot color="#10b981" label="낮음" />
+        <LegendDot color="#10b981" label="낮음" />
       </View>
     </View>
   );
@@ -562,7 +657,7 @@ const FootHeatmap = () => {
 
 const FOOT_COLORS = { high: '#ef4444', mid: '#f59e0b', low: '#10b981' };
 
-const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number; r: number; level: 'high' | 'mid' | 'low' }[] }) => (
+const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: FootDot[] }) => (
   <View className="items-center">
     <Text
       className="text-[10px] mb-[6px] tracking-[0.8px] font-bold uppercase"
@@ -570,19 +665,19 @@ const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number
     >
       {side === 'L' ? '왼발' : '오른발'}
     </Text>
-    <Svg width={80} height={125} viewBox="0 0 80 125">
+    <Svg width={80} height={130} viewBox="0 0 80 130">
       <Defs>
         <SvgGradient id={`foot-bg-${side}`} x1="0" x2="0" y1="0" y2="1">
           <Stop offset="0%" stopColor="rgba(229, 222, 250, 0.04)" />
           <Stop offset="100%" stopColor="rgba(208, 186, 247, 0.01)" />
         </SvgGradient>
       </Defs>
+      {/* 실시간 화면과 동일한 발 외곽선(FOOT_PATH). 외곽선은 좌우 대칭이라 미러링 불필요 */}
       <Path
-        d="M40 6 C56 6 64 20 64 38 C64 50 60 58 58 68 C58 78 60 90 58 102 C56 114 50 120 40 120 C30 120 24 114 22 102 C20 90 22 78 22 68 C20 58 16 50 16 38 C16 20 24 6 40 6 Z"
+        d={FOOT_PATH}
         fill={`url(#foot-bg-${side})`}
         stroke="rgba(124,58,237,0.12)"
         strokeWidth={1}
-        transform={side === 'R' ? 'translate(80, 0) scale(-1, 1)' : undefined}
       />
       {dots.map((d, i) => (
         <Circle key={i} cx={d.x} cy={d.y} r={d.r} fill={FOOT_COLORS[d.level]} opacity={0.9} />
@@ -594,8 +689,9 @@ const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: { x: number; y: number
 const isNeutralPronation = (type: string): boolean =>
   /정상|중립|normal|neutral/i.test(type);
 
-const Pronation = ({ footSensorData }: { footSensorData?: FootSensorDataResponseDto[] }) => {
-  // 상세 데이터가 있으면 좌/우 센서로, 없으면 목업으로 표시
+const Pronation = ({ footSensorData, loading }: { footSensorData?: FootSensorDataResponseDto[]; loading?: boolean }) => {
+  // 저장 기록 로딩 중에는 '--'. 로딩 후엔 상세 데이터가 있으면 좌/우 센서로, 없으면 목업으로 표시.
+  if (loading) return <NoDataHint />;
   if (footSensorData && footSensorData.length > 0) {
     return (
       <View className="flex-row gap-[10px]">
@@ -673,10 +769,12 @@ const CoachSummaryCard = ({
   title,
   items,
   generating,
+  loading,
 }: {
   title?: string;
   items?: CoachItem[];
   generating?: boolean;
+  loading?: boolean;
 }) => (
   <LinearGradient
     colors={['#7c3aed', '#6d28d9', '#3b82f6']}
@@ -705,7 +803,9 @@ const CoachSummaryCard = ({
     </View>
 
     <View className="gap-2">
-      {generating ? (
+      {loading ? (
+        <NoDataHint dark />
+      ) : generating ? (
         <View className="flex-row items-center gap-2 py-1">
           <ActivityIndicator size="small" color="#ffffff" />
           <Text className="text-[12px] font-medium" style={{ color: 'rgba(255,255,255,0.85)' }}>

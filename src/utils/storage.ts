@@ -24,6 +24,12 @@ export interface PersistedSession {
   userId: number;
   userName: string;
   email: string;
+  /** 가입 날짜 (재시작 시 설정 화면 표시용) */
+  createdAt?: string;
+  /** 누적 러닝 횟수 (재시작 시 설정 화면 표시용) */
+  runCount?: number;
+  /** 누적 러닝 거리(km) (재시작 시 설정 화면 표시용) */
+  totalDistanceKm?: number;
 }
 
 export const accessToken = {

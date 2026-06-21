@@ -51,3 +51,9 @@ export const readRun = async (
   );
   return res.data.data;
 };
+
+/** 러닝 기록 삭제 — DELETE /api/run/{activityId} (인증 필요). 삭제된 activityId 반환 */
+export const deleteRun = async (activityId: number): Promise<number> => {
+  const res = await apiClient.delete<ApiResponse<number>>(`/api/run/${activityId}`);
+  return res.data.data;
+};

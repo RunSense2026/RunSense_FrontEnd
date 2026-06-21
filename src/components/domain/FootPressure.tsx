@@ -1,18 +1,26 @@
 import { View, Text } from 'react-native';
 import Svg, { Path, Circle, G, Text as SvgText } from 'react-native-svg';
 
-// 발 윤곽(viewBox 80×130).
-const FOOT_PATH =
+// 발 윤곽(viewBox 80×130). 리포트 화면 히트맵도 같은 외곽선을 쓰도록 export 한다.
+export const FOOT_PATH =
   'M40 8 C56 8 64 22 64 40 C64 52 60 60 58 70 C58 80 60 92 58 104 C56 116 50 122 40 122 C30 122 24 116 22 104 C20 92 22 80 22 70 C20 60 16 52 16 40 C16 22 24 8 40 8 Z';
 
-// 5개 FSR 센서 위치 — 앞꿈치(안/바깥), 중족(안/바깥), 뒤꿈치.
-const FOOT_POSITIONS = [
-  { x: 30, y: 18 },
-  { x: 50, y: 22 },
-  { x: 32, y: 60 },
-  { x: 50, y: 60 },
-  { x: 40, y: 100 },
+// 5개 FSR 센서 위치(인덱스 = avg 배열 순서) — 실제 인솔 배선과 동일하게:
+//   A0 엄지 · A1 엄지 밑 · A2 새끼발가락 밑 · A3 중간(중족) · A4 뒤꿈치.
+// 왼발 기준 화면 좌표(viewBox 80×130). 오른발은 x 를 좌우 반전(80-x)해 미러링한다.
+const LEFT_FOOT_POSITIONS: { x: number; y: number }[] = [
+  { x: 46, y: 16 }, // A0 엄지
+  { x: 30, y: 46 }, // A1 엄지 밑
+  { x: 50, y: 36 }, // A2 새끼발가락 밑 (엄지밑과 좌우 반대 + 더 높게)
+  { x: 40, y: 74 }, // A3 중간(중족)
+  { x: 40, y: 104 }, // A4 뒤꿈치
 ];
+
+// 리포트 화면 히트맵도 동일한 점 위치를 쓰도록 export.
+export const footPositions = (side: 'L' | 'R'): { x: number; y: number }[] =>
+  side === 'L'
+    ? LEFT_FOOT_POSITIONS
+    : LEFT_FOOT_POSITIONS.map((p) => ({ x: 80 - p.x, y: p.y }));
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 
@@ -43,7 +51,9 @@ interface FootPressureProps {
  * 한쪽 발의 실시간 압력 분포 — 센서별로 압력에 따라 크기·색이 변하는 원을 그리고,
  * 각 원 위에 압력값(%)을 표시한다.
  */
-export const FootPressure = ({ side, fsr }: FootPressureProps) => (
+export const FootPressure = ({ side, fsr }: FootPressureProps) => {
+  const positions = footPositions(side);
+  return (
   <View className="items-center">
     <Text className="text-[10px] text-t3 mb-[6px] tracking-[0.8px] font-semibold">
       {side === 'L' ? '왼발' : '오른발'}
@@ -56,7 +66,7 @@ export const FootPressure = ({ side, fsr }: FootPressureProps) => (
         strokeWidth={0.8}
       />
       {fsr.map((v, i) => {
-        const p = FOOT_POSITIONS[i];
+        const p = positions[i];
         const radius = 9 + clamp01(v) * 7;
         const color = pressureColor(v);
         return (
@@ -78,4 +88,5 @@ export const FootPressure = ({ side, fsr }: FootPressureProps) => (
       })}
     </Svg>
   </View>
-);
+  );
+};
