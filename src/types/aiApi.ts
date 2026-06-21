@@ -36,7 +36,6 @@ export interface AiCoachingResultDto {
 
 /** 실시간 코칭 생성 응답 (음성 파일 포함) — POST /ai/coaching (activity_id 없음) */
 export interface AiCoachingWithVoiceDto {
-  coachingId: number;
   feedbackText: string;
   focusPoint: string | null;
   recExercise: string | null;
@@ -92,7 +91,6 @@ export interface CoachingResponseWire {
 
 /** POST /ai/coaching 응답 (음성 파일 포함) */
 export interface CoachingWithVoiceResponseWire {
-  coaching_id: number;
   feedback_text: string;
   focus_point: string | null;
   rec_exercise: string | null;
