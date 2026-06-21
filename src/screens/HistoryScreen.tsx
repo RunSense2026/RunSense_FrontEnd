@@ -43,6 +43,19 @@ const trimTime = (time: string) => time.replace(/^00:/, '');
 const toYMD = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+// 주간 그래프 요일 라벨(월~일 순)
+const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+
+// 이번 주 월요일 0시 (요일별 집계 기준점)
+const currentWeekMonday = (): Date => {
+  const today = new Date();
+  const dow = (today.getDay() + 6) % 7; // 월=0 … 일=6
+  const monday = new Date(today);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(today.getDate() - dow);
+  return monday;
+};
+
 // 주간/월간 탭의 시작·종료일 계산
 const periodRange = (period: Period): { startDate: string; endDate: string } => {
   const end = new Date();
@@ -58,6 +71,8 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
   const [data, setData] = useState<RunningActivityListResponseDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 주간 그래프의 '지난주 대비' 비교용 — 지난주(월~일) 합계 거리(km)
+  const [prevWeekKm, setPrevWeekKm] = useState<number | null>(null);
 
   // period 에 따라 전체(GET /api/run) 또는 기간(GET /api/run/date) 조회
   const load = useCallback(async () => {
@@ -94,12 +109,51 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
     }, [load]),
   );
 
+  // 주간 탭일 때만 지난주(월~일) 합계를 추가 조회해 '지난주 대비' 비교에 사용한다.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated || period !== 'week') {
+        setPrevWeekKm(null);
+        return;
+      }
+      let cancelled = false;
+      const monday = currentWeekMonday();
+      const prevMon = new Date(monday);
+      prevMon.setDate(monday.getDate() - 7);
+      const prevSun = new Date(monday);
+      prevSun.setDate(monday.getDate() - 1);
+      readRunsByDate(toYMD(prevMon), toYMD(prevSun))
+        .then((r) => {
+          if (!cancelled) setPrevWeekKm(r.totalDistance);
+        })
+        .catch(() => {
+          if (!cancelled) setPrevWeekKm(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated, period]),
+  );
+
   // 서버가 기간 필터링을 하므로 클라이언트는 선택한 정렬만 적용한다.
   const activities = (data?.activities ?? []).slice().sort((a, b) => {
     if (sort === 'distance') return b.distance - a.distance;
     const diff = new Date(a.activityDate).getTime() - new Date(b.activityDate).getTime();
     return sort === 'oldest' ? diff : -diff;
   });
+
+  // 이번 주(월~일) 요일별 거리 합계 — 주간 그래프용. data.activities 에서 집계한다.
+  const weekBars = (() => {
+    const monday = currentWeekMonday();
+    const todayIdx = (new Date().getDay() + 6) % 7; // 월=0 … 일=6
+    const dist = [0, 0, 0, 0, 0, 0, 0];
+    for (const a of data?.activities ?? []) {
+      const idx = Math.floor((new Date(a.activityDate).getTime() - monday.getTime()) / 86_400_000);
+      if (idx >= 0 && idx < 7) dist[idx] += a.distance;
+    }
+    return WEEK_LABELS.map((day, i) => ({ day, dist: dist[i], isToday: i === todayIdx }));
+  })();
+  const thisWeekKm = weekBars.reduce((s, d) => s + d.dist, 0);
 
   const periodLabel = period === 'week' ? '최근 7일' : period === 'month' ? '최근 30일' : '전체';
 
@@ -169,7 +223,7 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
           <HSummaryCard label="평균 폼" value={Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
         </View>
 
-        {period === 'week' && <DailyBarChart />}
+        {period === 'week' && <DailyBarChart bars={weekBars} thisWeekKm={thisWeekKm} prevWeekKm={prevWeekKm} />}
 
         {/* Section title */}
         <View className="flex-row justify-between items-baseline mt-4 mb-2">
@@ -322,18 +376,23 @@ const HSummaryCard = ({
   </View>
 );
 
-const DAYS = [
-  { day: '월', dist: 0 },
-  { day: '화', dist: 5.0 },
-  { day: '수', dist: 4.2 },
-  { day: '목', dist: 3.8 },
-  { day: '금', dist: 6.4 },
-  { day: '토', dist: 0 },
-  { day: '일', dist: 5.24 },
-];
+interface WeekBar {
+  day: string;
+  dist: number;
+  isToday: boolean;
+}
 
-const DailyBarChart = () => {
-  const max = Math.max(...DAYS.map((d) => d.dist));
+const DailyBarChart = ({
+  bars,
+  thisWeekKm,
+  prevWeekKm,
+}: {
+  bars: WeekBar[];
+  thisWeekKm: number;
+  prevWeekKm: number | null;
+}) => {
+  const max = Math.max(...bars.map((d) => d.dist), 0.001); // 0 나눗셈 방지
+  const diff = prevWeekKm == null ? null : thisWeekKm - prevWeekKm;
   return (
     <View
       className="rounded-[18px] p-[14px]"
@@ -346,26 +405,31 @@ const DailyBarChart = () => {
       <View className="flex-row justify-between items-baseline mb-3">
         <View>
           <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>요일별 거리</Text>
-          <Text className="text-[10px] font-medium mt-[2px]" style={{ color: '#9b8cc5' }}>이번 주 합계 24.6km</Text>
+          <Text className="text-[10px] font-medium mt-[2px]" style={{ color: '#9b8cc5' }}>
+            이번 주 합계 {thisWeekKm.toFixed(1)}km
+          </Text>
         </View>
-        <Text className="text-[11px] text-good-2 font-bold">+3.8km vs 지난주</Text>
+        {diff != null && (
+          <Text className="text-[11px] font-bold" style={{ color: diff >= 0 ? '#10b981' : '#ef4444' }}>
+            {diff >= 0 ? '+' : ''}{diff.toFixed(1)}km vs 지난주
+          </Text>
+        )}
       </View>
 
       <View className="flex-row items-end gap-[6px] h-[100px]">
-        {DAYS.map((d) => {
+        {bars.map((d) => {
           const ran = d.dist > 0;
           const h = ran ? Math.max(8, (d.dist / max) * 88) : 4;
-          const isToday = d.day === '일';
           return (
             <View key={d.day} className="flex-1 items-center gap-[6px]">
               {ran ? (
-                <Text className="text-[10px] font-bold text-purple-500">{d.dist}</Text>
+                <Text className="text-[10px] font-bold text-purple-500">{d.dist.toFixed(1)}</Text>
               ) : (
                 <Text className="text-[10px] text-transparent">·</Text>
               )}
               {ran ? (
                 <LinearGradient
-                  colors={isToday ? ['#a78bfa', '#7c3aed', '#3b82f6'] : ['#c4b5fd', '#8b5cf6']}
+                  colors={d.isToday ? ['#a78bfa', '#7c3aed', '#3b82f6'] : ['#c4b5fd', '#8b5cf6']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 0, y: 1 }}
                   style={{ width: '100%', height: h, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }}
@@ -382,8 +446,8 @@ const DailyBarChart = () => {
                 />
               )}
               <Text
-                className={`text-[11px] ${isToday ? 'font-bold' : 'font-medium'}`}
-                style={{ color: isToday ? '#7c3aed' : '#9b8cc5' }}
+                className={`text-[11px] ${d.isToday ? 'font-bold' : 'font-medium'}`}
+                style={{ color: d.isToday ? '#7c3aed' : '#9b8cc5' }}
               >
                 {d.day}
               </Text>
