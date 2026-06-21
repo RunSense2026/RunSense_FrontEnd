@@ -216,11 +216,11 @@ export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
           })}
         </View>
 
-        {/* Summary cards — 선택 기간 합계 (서버 집계) */}
+        {/* Summary cards — 선택 기간 합계 (서버 집계). 로딩 중에는 이전 값 대신 '--' 표시 */}
         <View className="flex-row gap-2 mb-[14px]">
-          <HSummaryCard label="총 거리" value={(data?.totalDistance ?? 0).toFixed(1)} unit="km" trend={periodLabel} />
-          <HSummaryCard label="러닝 횟수" value={String(data?.totalCount ?? 0)} unit="회" trend={periodLabel} trendGood />
-          <HSummaryCard label="평균 폼" value={Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
+          <HSummaryCard label="총 거리" value={loading ? '--' : (data?.totalDistance ?? 0).toFixed(1)} unit="km" trend={periodLabel} />
+          <HSummaryCard label="러닝 횟수" value={loading ? '--' : String(data?.totalCount ?? 0)} unit="회" trend={periodLabel} trendGood />
+          <HSummaryCard label="평균 폼" value={loading ? '--' : Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
         </View>
 
         {period === 'week' && <DailyBarChart bars={weekBars} thisWeekKm={thisWeekKm} prevWeekKm={prevWeekKm} />}
