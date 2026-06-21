@@ -15,10 +15,14 @@ import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
+import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { footCoachingFields } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
+
+// 우측 상단 심박 존(역치) 배지 표시 여부 — 코드는 남겨두고 숨김 처리(필요 시 true 로).
+const SHOW_HR_ZONE = false;
 
 // ═════════════════════════════════════════════════════════════
 // VARIATION A — "Pace Hero" — pace dominates as a glowing ring
@@ -45,6 +49,9 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
   // 실시간 발 압력 분포(2페이지) — 인솔 연결 시 실데이터·미연결 시 시뮬레이션.
   const foot = useFootPressure(tick);
+
+  // 현재 위치 지역명(홈·코스 화면과 동일한 GPS→역지오코딩 방식).
+  const { name: locationName } = useResolvedLocation();
 
   // HR 스파크라인 데이터는 tick(1초) 단위로만 바뀌면 충분하다. useMemo 로 참조를
   // 고정해, 페이스 이징 등으로 화면이 자주 리렌더돼도 스파크라인은 다시 안 그린다.
@@ -76,18 +83,21 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         <View className="px-[18px] pt-1 flex-row justify-between items-center">
           <View className="flex-row items-center gap-2">
             <View className="w-2 h-2 rounded bg-bad" />
-            <Text className="text-[12px] text-t2 font-medium">한강공원 · 3.2km 지점</Text>
+            <Text className="text-[12px] text-t2 font-medium">{locationName}</Text>
           </View>
-          <View
-            className="px-[10px] py-1 rounded-full"
-            style={{
-              backgroundColor: `${zone.color}24`,
-              borderWidth: 0.5,
-              borderColor: `${zone.color}40`,
-            }}
-          >
-            <Text className="text-[11px] font-semibold" style={{ color: zone.color }}>{zone.label}</Text>
-          </View>
+          {/* 심박 존(역치) 배지 — 삭제하지 않고 숨김(SHOW_HR_ZONE 로 토글) */}
+          {SHOW_HR_ZONE && (
+            <View
+              className="px-[10px] py-1 rounded-full"
+              style={{
+                backgroundColor: `${zone.color}24`,
+                borderWidth: 0.5,
+                borderColor: `${zone.color}40`,
+              }}
+            >
+              <Text className="text-[11px] font-semibold" style={{ color: zone.color }}>{zone.label}</Text>
+            </View>
+          )}
         </View>
 
         {/* Pace ring */}
