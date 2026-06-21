@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -12,10 +12,11 @@ import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-na
 import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal, FootPressure, RSVoicePlayer } from '@/components/domain';
 import { resolveVoiceUrl } from '@/api';
 import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
-import { useTicker } from '@/hooks/useTicker';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
+import { useInsoleStore } from '@/stores/insoleStore';
+import { footCoachingFields } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -37,21 +38,29 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   const target = route.params?.targetPaceSpk ?? 330;
 
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
-  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
+  const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
-  const animatedPace = useTicker(paceSpk, 0.08);
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
   const zone = hrZone(hr, 164);
 
   // 실시간 발 압력 분포(2페이지) — 인솔 연결 시 실데이터·미연결 시 시뮬레이션.
   const foot = useFootPressure(tick);
 
+  // HR 스파크라인 데이터는 tick(1초) 단위로만 바뀌면 충분하다. useMemo 로 참조를
+  // 고정해, 페이스 이징 등으로 화면이 자주 리렌더돼도 스파크라인은 다시 안 그린다.
+  const hrTrace = useMemo(() => genHrTrace(tick), [tick]);
+
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
-  const liveCoaching = useLiveCoaching(paused, () => ({
-    pace: spkToMinutes(paceSpk),
-    heartRate: hr,
-    cadence: cad,
-  }));
+  // 인솔 연결 시 직전 60초 구간 발 압력 평균(0~100 정규화)을 함께 보낸다.
+  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => {
+    const { L, R } = useInsoleStore.getState().drainFootAverages();
+    return {
+      pace: spkToMinutes(paceSpk),
+      heartRate: hr,
+      cadence: cad,
+      ...footCoachingFields(L, R),
+    };
+  });
 
   // 코칭 음성 파일 경로 → 재생 가능한 절대 URL (없으면 null).
   const coachVoiceUrl = resolveVoiceUrl(liveCoaching?.voiceFile);
@@ -91,7 +100,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
           {/* Pace ring */}
           <View className="items-center mt-[18px]">
-            <PaceRing pct={ringPct} pace={animatedPace} />
+            <PaceRing pct={ringPct} pace={paceSpk} />
           </View>
 
           {/* Primary metrics */}
@@ -110,7 +119,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
                 </Text>
                 <Text className="text-[11px] text-t3">평균 154 · 최대 162</Text>
               </View>
-              <RSSparkline data={genHrTrace(tick)} width={284} height={36} stroke={zone.color} />
+              <RSSparkline data={hrTrace} width={284} height={36} stroke={zone.color} />
             </RSCard>
           </View>
 
@@ -143,7 +152,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
           {/* 평균 페이스 링 */}
           <View className="items-center mt-[14px]">
-            <PaceRing pct={ringPct} pace={animatedPace} label="평균 페이스" />
+            <PaceRing pct={ringPct} pace={paceSpk} label="평균 페이스" />
           </View>
 
           {/* 거리 · 시간 · 심박수 */}
@@ -197,7 +206,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         onConfirm={() => {
           setEndOpen(false);
           navigation.navigate('Report', {
-            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad },
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad, splits, coachings: collectedCoachings },
           });
         }}
       />

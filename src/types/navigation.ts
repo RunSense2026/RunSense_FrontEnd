@@ -11,6 +11,10 @@ export interface RunSummaryParam {
   avgHeartRate?: number;
   cadence?: number;
   formScore?: number;
+  /** 러닝 중 수집된 km별 구간 페이스(초/km) — 스플릿 차트·백엔드 저장에 사용 */
+  splits?: Array<{ km: number; paceSec: number }>;
+  /** 러닝 중 생성된 AI 코칭 목록 — buildRunPayload 에서 백엔드 저장에 사용 */
+  coachings?: Array<{ feedbackText: string; focusPoint: string | null; recExercise: string | null }>;
 }
 
 // Bottom-tab screens (the persistent 5-tab bar; "run" is a flow launcher, not a tab).

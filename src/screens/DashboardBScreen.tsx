@@ -16,12 +16,12 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
   const [endOpen, setEndOpen] = useState(false);
 
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
-  const { tick, sec, distKm, paceSpk } = useRunSession(paused);
+  const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
 
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
-  const liveCoaching = useLiveCoaching(paused, () => ({
+  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => ({
     pace: spkToMinutes(paceSpk),
     heartRate: hr,
     cadence: cad,
@@ -91,7 +91,7 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
         onConfirm={() => {
           setEndOpen(false);
           navigation.navigate('Report', {
-            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr },
+            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, splits, coachings: collectedCoachings },
           });
         }}
       />

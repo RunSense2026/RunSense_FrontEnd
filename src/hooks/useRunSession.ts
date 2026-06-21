@@ -9,6 +9,14 @@ const MAX_ACCURACY_M = 50; // 이 값보다 오차가 큰 fix 는 무시
 const MIN_STEP_M = 1; // 정지 상태 지터 무시
 const MAX_STEP_M = 75; // 순간이동(튐) 무시
 
+/** km별 구간 페이스 — 완료된 km 1개당 한 항목 */
+export interface RunSplit {
+  /** 구간 번호(=완료 km, 1부터) */
+  km: number;
+  /** 해당 km 를 달린 시간(초) = 구간 페이스 */
+  paceSec: number;
+}
+
 export interface RunSession {
   /** 1초마다 증가하는 카운터 (시뮬레이션 표시값 등에 사용) */
   tick: number;
@@ -20,6 +28,8 @@ export interface RunSession {
   paceSpk: number;
   /** GPS 위치를 한 번이라도 받았는지 */
   gpsReady: boolean;
+  /** km 경계를 지날 때마다 누적되는 구간 페이스 목록 */
+  splits: RunSplit[];
 }
 
 // 라이브 러닝 세션: 경과 시간(타이머) + GPS 실거리/실페이스.
@@ -28,6 +38,7 @@ export const useRunSession = (paused: boolean): RunSession => {
   const [tick, setTick] = useState(0);
   const [distM, setDistM] = useState(0);
   const [gpsReady, setGpsReady] = useState(false);
+  const [splits, setSplits] = useState<RunSplit[]>([]);
 
   // 경과 시간 타이머 (1초)
   useFocusEffect(
@@ -77,9 +88,26 @@ export const useRunSession = (paused: boolean): RunSession => {
     };
   }, []);
 
+  // km 경계를 지날 때마다 구간 페이스(직전 km 를 달린 시간)를 기록한다.
+  // lastKmRef: 마지막으로 기록한 완료 km, lastKmTickRef: 그 km 통과 시점의 경과초.
+  const lastKmRef = useRef(0);
+  const lastKmTickRef = useRef(0);
+  useEffect(() => {
+    const completedKm = Math.floor(distM / 1000);
+    if (completedKm <= lastKmRef.current) return;
+    const recorded: RunSplit[] = [];
+    while (lastKmRef.current < completedKm) {
+      const km = lastKmRef.current + 1;
+      recorded.push({ km, paceSec: tick - lastKmTickRef.current });
+      lastKmRef.current = km;
+      lastKmTickRef.current = tick;
+    }
+    setSplits((prev) => [...prev, ...recorded]);
+  }, [distM, tick]);
+
   const distKm = distM / 1000;
   // 평균 페이스(초/km). 20m 미만에선 값이 튀므로 0(표시: --'--").
   const paceSpk = distKm > 0.02 ? tick / distKm : 0;
 
-  return { tick, sec: tick, distKm, paceSpk, gpsReady };
+  return { tick, sec: tick, distKm, paceSpk, gpsReady, splits };
 };
