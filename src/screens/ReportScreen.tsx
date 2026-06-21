@@ -6,7 +6,7 @@ import { isAxiosError } from 'axios';
 import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
-import { saveRun, readRun, createCoachingReport, readCoachingReport } from '@/api';
+import { saveRun, readRun, deleteRun, createCoachingReport, readCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
   RunningActivityCreateRequestDto,
@@ -55,6 +55,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
   const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [deleting, setDeleting] = useState(false);
 
   // History 등에서 activityId 로 들어오면 해당 기록을 상세 조회한다.
   const activityId = route.params?.activityId;
@@ -202,6 +203,31 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     void runSaveAndReport({ silent: false });
   };
 
+  // 휴지통 아이콘(저장된 기록 삭제) — 확인 후 백엔드에서 삭제하고 이전 화면(기록 탭)으로 돌아간다.
+  const handleDelete = () => {
+    if (activityId == null || deleting) return;
+    Alert.alert('러닝 기록 삭제', '이 러닝 기록을 삭제할까요? 되돌릴 수 없어요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await deleteRun(activityId);
+            navigation.goBack();
+          } catch (e) {
+            setDeleting(false);
+            const message = isAxiosError(e)
+              ? e.response?.data?.message ?? '러닝 기록 삭제에 실패했어요.'
+              : '삭제 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.';
+            Alert.alert('삭제 실패', message);
+          }
+        },
+      },
+    ]);
+  };
+
   // 갓 뛴 리포트(activityId 없음)로 진입하면 — 러닝 종료 직후 — 기록을 자동 저장하고
   // AI 코칭/음성을 생성한다. 로그인 상태에서 한 번만 실행한다. (비로그인 시 수동 버튼으로 유도)
   const autoSavedRef = useRef(false);
@@ -262,14 +288,19 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
                 )}
               </IconBtn>
             )}
-            <IconBtn>
-              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                <Circle cx={12} cy={12} r={3} stroke="#7c3aed" strokeWidth={2} />
-                <Circle cx={6} cy={6} r={2} stroke="#7c3aed" strokeWidth={2} />
-                <Circle cx={18} cy={18} r={2} stroke="#7c3aed" strokeWidth={2} />
-                <Path d="M9 12l9-5M9 13l9 4" stroke="#7c3aed" strokeWidth={2} strokeLinecap="round" />
-              </Svg>
-            </IconBtn>
+            {/* 삭제 버튼은 저장된 기록(기록 탭에서 진입)에서만 노출 */}
+            {isViewingSaved && (
+              <IconBtn onPress={handleDelete} disabled={deleting}>
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#dc2626" />
+                ) : (
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" stroke="#dc2626" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    <Path d="M10 11v6M14 11v6" stroke="#dc2626" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                )}
+              </IconBtn>
+            )}
           </View>
         </View>
 
