@@ -14,6 +14,6 @@ export interface InsolePacket {
   stepEvent: boolean;
   /** 발바닥 전체 압력 총합 */
   total: number;
-  /** 센서 5개(A0~A4) 평균 압력. index 4 = 뒤꿈치(5번 센서) */
+  /** 센서 5개 평균 압력 — A0 엄지·A1 엄지밑·A2 새끼발가락밑·A3 중간(중족)·A4 뒤꿈치 */
   avg: number[];
 }
