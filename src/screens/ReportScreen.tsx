@@ -6,6 +6,7 @@ import { isAxiosError } from 'axios';
 import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
+import { FOOT_PATH, footPositions } from '@/components/domain/FootPressure';
 import { saveRun, readRun, deleteRun, createCoachingReport, readCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
@@ -576,14 +577,10 @@ type FootDot = { x: number; y: number; r: number; level: FootLevel };
 
 const FOOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_right', 'midfoot_left', 'midfoot_right', 'heel'];
 
-// 5개 압력 구간의 dot 위치(좌/우 발 공통). zone 으로 hitmapJson 값과 연결한다.
-const FOOT_DOT_LAYOUT: { x: number; y: number; r: number; zone: FootZone }[] = [
-  { x: 30, y: 26, r: 10, zone: 'forefoot_left' },
-  { x: 52, y: 26, r: 10, zone: 'forefoot_right' },
-  { x: 31, y: 64, r: 9, zone: 'midfoot_left' },
-  { x: 50, y: 64, r: 9, zone: 'midfoot_right' },
-  { x: 40, y: 105, r: 13, zone: 'heel' },
-];
+// 실시간 화면(FootPressure)의 footPositions(엄지·엄지밑·새끼밑·중간·뒤꿈치)와 동일한 점 위치를 쓴다.
+// 각 점에 매칭되는 hitmapJson 구간(색 결정용)과 점 반지름.
+const DOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_left', 'forefoot_right', 'midfoot_left', 'heel'];
+const DOT_RADII = [10, 9, 9, 9, 12];
 
 // 데이터가 없을 때(갓 뛴 리포트 등) 쓰는 목업 압력 분포(%).
 const MOCK_HITMAP: Record<FootZone, number> = {
@@ -633,17 +630,18 @@ const FootHeatmap = ({ footSensorData, loading }: { footSensorData?: FootSensorD
   if (loading) return <NoDataHint />;
 
   // 좌/우 센서의 hitmapJson(5구간)으로 실제 압력 색을 칠한다. 데이터가 없으면 목업으로 폴백.
-  const dotsFor = (re: RegExp): FootDot[] => {
+  // 점 위치는 실시간 화면과 동일한 footPositions 를 쓰고, 각 점에 해당 구간 색을 입힌다.
+  const dotsFor = (side: 'L' | 'R', re: RegExp): FootDot[] => {
     const data = footSensorData?.find((f) => re.test(f.footSide));
     const levels = zoneLevels((data && parseHitmap(data.hitmapJson)) || MOCK_HITMAP);
-    return FOOT_DOT_LAYOUT.map((d) => ({ x: d.x, y: d.y, r: d.r, level: levels[d.zone] }));
+    return footPositions(side).map((p, i) => ({ x: p.x, y: p.y, r: DOT_RADII[i], level: levels[DOT_ZONES[i]] }));
   };
 
   return (
     <View>
       <View className="flex-row justify-center gap-7">
-        <FootSvg side="L" dots={dotsFor(/left|왼/i)} />
-        <FootSvg side="R" dots={dotsFor(/right|오른/i)} />
+        <FootSvg side="L" dots={dotsFor('L', /left|왼/i)} />
+        <FootSvg side="R" dots={dotsFor('R', /right|오른/i)} />
       </View>
       <View
         className="flex-row justify-center gap-[14px] mt-3 pt-[10px]"
@@ -667,19 +665,19 @@ const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: FootDot[] }) => (
     >
       {side === 'L' ? '왼발' : '오른발'}
     </Text>
-    <Svg width={80} height={125} viewBox="0 0 80 125">
+    <Svg width={80} height={130} viewBox="0 0 80 130">
       <Defs>
         <SvgGradient id={`foot-bg-${side}`} x1="0" x2="0" y1="0" y2="1">
           <Stop offset="0%" stopColor="rgba(229, 222, 250, 0.04)" />
           <Stop offset="100%" stopColor="rgba(208, 186, 247, 0.01)" />
         </SvgGradient>
       </Defs>
+      {/* 실시간 화면과 동일한 발 외곽선(FOOT_PATH). 외곽선은 좌우 대칭이라 미러링 불필요 */}
       <Path
-        d="M40 6 C56 6 64 20 64 38 C64 50 60 58 58 68 C58 78 60 90 58 102 C56 114 50 120 40 120 C30 120 24 114 22 102 C20 90 22 78 22 68 C20 58 16 50 16 38 C16 20 24 6 40 6 Z"
+        d={FOOT_PATH}
         fill={`url(#foot-bg-${side})`}
         stroke="rgba(124,58,237,0.12)"
         strokeWidth={1}
-        transform={side === 'R' ? 'translate(80, 0) scale(-1, 1)' : undefined}
       />
       {dots.map((d, i) => (
         <Circle key={i} cx={d.x} cy={d.y} r={d.r} fill={FOOT_COLORS[d.level]} opacity={0.9} />

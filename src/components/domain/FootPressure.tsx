@@ -1,8 +1,8 @@
 import { View, Text } from 'react-native';
 import Svg, { Path, Circle, G, Text as SvgText } from 'react-native-svg';
 
-// 발 윤곽(viewBox 80×130).
-const FOOT_PATH =
+// 발 윤곽(viewBox 80×130). 리포트 화면 히트맵도 같은 외곽선을 쓰도록 export 한다.
+export const FOOT_PATH =
   'M40 8 C56 8 64 22 64 40 C64 52 60 60 58 70 C58 80 60 92 58 104 C56 116 50 122 40 122 C30 122 24 116 22 104 C20 92 22 80 22 70 C20 60 16 52 16 40 C16 22 24 8 40 8 Z';
 
 // 5개 FSR 센서 위치(인덱스 = avg 배열 순서) — 실제 인솔 배선과 동일하게:
@@ -16,7 +16,8 @@ const LEFT_FOOT_POSITIONS: { x: number; y: number }[] = [
   { x: 40, y: 104 }, // A4 뒤꿈치
 ];
 
-const footPositions = (side: 'L' | 'R'): { x: number; y: number }[] =>
+// 리포트 화면 히트맵도 동일한 점 위치를 쓰도록 export.
+export const footPositions = (side: 'L' | 'R'): { x: number; y: number }[] =>
   side === 'L'
     ? LEFT_FOOT_POSITIONS
     : LEFT_FOOT_POSITIONS.map((p) => ({ x: 80 - p.x, y: p.y }));
