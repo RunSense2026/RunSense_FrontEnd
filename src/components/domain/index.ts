@@ -4,6 +4,7 @@ export { RSStat } from './RSStat';
 export { RSSparkline } from './RSSparkline';
 export { RSCoach } from './RSCoach';
 export { RSVoicePlayer } from './RSVoicePlayer';
+export { RSVoiceAutoPlay } from './RSVoiceAutoPlay';
 export { RSBackground } from './RSBackground';
 export { RSButton } from './RSButton';
 export { EndRunModal } from './EndRunModal';

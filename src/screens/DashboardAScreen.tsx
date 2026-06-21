@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
-import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal, FootPressure, RSVoicePlayer } from '@/components/domain';
+import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal, FootPressure, RSVoiceAutoPlay } from '@/components/domain';
 import { resolveVoiceUrl } from '@/api';
 import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
@@ -125,14 +125,14 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
               </RSCard>
             </View>
 
-            {/* AI coach */}
+            {/* AI coach — 코칭 생성 전엔 시작 안내 문구, 생성되면 실제 코칭으로 교체 */}
             <View className="px-4 pt-[10px]">
               <RSCoach
-                subtitle={liveCoaching?.focusPoint ?? '실시간 분석'}
-                message={liveCoaching?.feedbackText ?? '페이스가 안정적이에요. 이 리듬으로 1km만 더 가볼까요?'}
+                subtitle={liveCoaching?.focusPoint || undefined}
+                message={liveCoaching?.feedbackText ?? '지금부터 러닝을 시작해 봅시다.'}
               />
-              {/* 코칭 생성 시마다 음성을 자동 재생 (uri 변경 → autoPlay) */}
-              {coachVoiceUrl && <RSVoicePlayer uri={coachVoiceUrl} autoPlay />}
+              {/* 음성은 재생바 없이 자동 재생만 — 새 음성마다 key 로 처음부터 재생 */}
+              {coachVoiceUrl && <RSVoiceAutoPlay key={coachVoiceUrl} uri={coachVoiceUrl} />}
             </View>
 
             {/* Micro row */}
