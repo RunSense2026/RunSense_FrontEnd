@@ -27,9 +27,9 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   const [paused, setPaused] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
 
-  // 가로 스와이프 페이저 — 0: 페이스, 1: 평균 페이스·발 압력.
+  // 카드 영역만 가로 스와이프 — 0: 심박·코치·마이크로, 1: 발 압력 분포.
+  // (상단 헤더·페이스 링·핵심 지표는 고정, 카드만 좌우로 넘어간다)
   const { width } = useWindowDimensions();
-  const [pagerH, setPagerH] = useState(0);
   const [page, setPage] = useState(0);
   const onPageScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) =>
     setPage(Math.round(e.nativeEvent.contentOffset.x / width));
@@ -70,122 +70,103 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
   return (
     <DarkShell>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onPageScrollEnd}
-        onLayout={(e) => setPagerH(e.nativeEvent.layout.height)}
-        style={{ flex: 1, marginTop: 28 }}
-      >
-        {/* ── 페이지 1 — 페이스 ── */}
-        <View style={{ width, height: pagerH || undefined }}>
-          {/* Header */}
-          <View className="px-[18px] pt-1 flex-row justify-between items-center">
-            <View className="flex-row items-center gap-2">
-              <View className="w-2 h-2 rounded bg-bad" />
-              <Text className="text-[12px] text-t2 font-medium">한강공원 · 3.2km 지점</Text>
-            </View>
-            <View
-              className="px-[10px] py-1 rounded-full"
-              style={{
-                backgroundColor: `${zone.color}24`,
-                borderWidth: 0.5,
-                borderColor: `${zone.color}40`,
-              }}
-            >
-              <Text className="text-[11px] font-semibold" style={{ color: zone.color }}>{zone.label}</Text>
-            </View>
+      <View style={{ flex: 1, marginTop: 28 }}>
+        {/* ── 고정 상단 — 헤더·페이스 링·핵심 지표 ── */}
+        {/* Header */}
+        <View className="px-[18px] pt-1 flex-row justify-between items-center">
+          <View className="flex-row items-center gap-2">
+            <View className="w-2 h-2 rounded bg-bad" />
+            <Text className="text-[12px] text-t2 font-medium">한강공원 · 3.2km 지점</Text>
           </View>
-
-          {/* Pace ring */}
-          <View className="items-center mt-[18px]">
-            <PaceRing pct={ringPct} pace={paceSpk} />
+          <View
+            className="px-[10px] py-1 rounded-full"
+            style={{
+              backgroundColor: `${zone.color}24`,
+              borderWidth: 0.5,
+              borderColor: `${zone.color}40`,
+            }}
+          >
+            <Text className="text-[11px] font-semibold" style={{ color: zone.color }}>{zone.label}</Text>
           </View>
-
-          {/* Primary metrics */}
-          <View className="px-4 pt-4 flex-row gap-2">
-            <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
-            <MetricCard value={fmtTime(sec)} label="시간" />
-            <MetricCard value={String(hr)} unit="bpm" label="심박수" accent={zone.color} />
-          </View>
-
-          {/* HR sparkline */}
-          <View className="px-4 pt-[10px]">
-            <RSCard style={{ padding: 12 }}>
-              <View className="flex-row justify-between items-center mb-[6px]">
-                <Text className="text-[11px] text-t3 uppercase tracking-[0.66px] font-semibold">
-                  최근 5분 심박
-                </Text>
-                <Text className="text-[11px] text-t3">평균 154 · 최대 162</Text>
-              </View>
-              <RSSparkline data={hrTrace} width={284} height={36} stroke={zone.color} />
-            </RSCard>
-          </View>
-
-          {/* AI coach */}
-          <View className="px-4 pt-[10px]">
-            <RSCoach
-              subtitle={liveCoaching?.focusPoint ?? '실시간 분석'}
-              message={liveCoaching?.feedbackText ?? '페이스가 안정적이에요. 이 리듬으로 1km만 더 가볼까요?'}
-            />
-            {/* 코칭 생성 시마다 음성을 자동 재생 (uri 변경 → autoPlay) */}
-            {coachVoiceUrl && <RSVoicePlayer uri={coachVoiceUrl} autoPlay />}
-          </View>
-
-          {/* Micro row */}
-          <View className="px-4 pt-[10px] flex-row gap-[6px]">
-            <MicroStat label="케이던스" value={String(cad)} unit="spm" />
-            <MicroStat label="좌·우 균형" value={foot.balance} />
-            <MicroStat label="보폭" value="1.12" unit="m" />
-          </View>
-
-          <View className="flex-1" />
         </View>
 
-        {/* ── 페이지 2 — 평균 페이스 · 발 압력 ── */}
-        <View style={{ width, height: pagerH || undefined }}>
-          <View className="px-[18px] pt-1 flex-row items-center gap-2">
-            <View className="w-2 h-2 rounded-full bg-purple-300" />
-            <Text className="text-[12px] text-t2 font-medium">러닝 요약 · 실시간</Text>
-          </View>
-
-          {/* 평균 페이스 링 */}
-          <View className="items-center mt-[14px]">
-            <PaceRing pct={ringPct} pace={paceSpk} label="평균 페이스" />
-          </View>
-
-          {/* 거리 · 시간 · 심박수 */}
-          <View className="px-4 pt-4 flex-row gap-2">
-            <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
-            <MetricCard value={fmtTime(sec)} label="시간" />
-            <MetricCard value={String(hr)} unit="bpm" label="심박수" accent={zone.color} />
-          </View>
-
-          {/* 발 압력 분포 */}
-          <View className="px-4 pt-3">
-            <RSCard style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
-              <View className="flex-row justify-between items-center mb-[10px]">
-                <Text className="text-[11px] text-t3 tracking-[0.66px] uppercase font-semibold">
-                  발 압력 · 실시간
-                </Text>
-                <Text className="text-[11px] text-purple-200">
-                  {foot.connected ? `균형 ${foot.balance}` : '시뮬레이션'}
-                </Text>
-              </View>
-              <View className="flex-row justify-center gap-[36px]">
-                <FootPressure side="L" fsr={foot.lFsr} />
-                <FootPressure side="R" fsr={foot.rFsr} />
-              </View>
-            </RSCard>
-          </View>
-
-          <View className="flex-1" />
+        {/* Pace ring */}
+        <View className="items-center mt-[18px]">
+          <PaceRing pct={ringPct} pace={paceSpk} />
         </View>
-      </ScrollView>
 
-      {/* 페이지 인디케이터 */}
-      <PageDots count={2} active={page} />
+        {/* Primary metrics */}
+        <View className="px-4 pt-4 flex-row gap-2">
+          <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
+          <MetricCard value={fmtTime(sec)} label="시간" />
+          <MetricCard value={String(hr)} unit="bpm" label="심박수" accent={zone.color} />
+        </View>
+
+        {/* ── 카드 슬라이드 영역(카드만 좌우로 넘어감) ── */}
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={onPageScrollEnd}
+          style={{ flexGrow: 0, marginTop: 10 }}
+        >
+          {/* 슬라이드 1 — 최근 5분 심박 · AI 코치 · 케이던스/좌우균형/보폭 */}
+          <View style={{ width }}>
+            {/* HR sparkline */}
+            <View className="px-4">
+              <RSCard style={{ padding: 12 }}>
+                <View className="flex-row justify-between items-center mb-[6px]">
+                  <Text className="text-[11px] text-t3 uppercase tracking-[0.66px] font-semibold">
+                    최근 5분 심박
+                  </Text>
+                  <Text className="text-[11px] text-t3">평균 154 · 최대 162</Text>
+                </View>
+                <RSSparkline data={hrTrace} width={284} height={36} stroke={zone.color} />
+              </RSCard>
+            </View>
+
+            {/* AI coach */}
+            <View className="px-4 pt-[10px]">
+              <RSCoach
+                subtitle={liveCoaching?.focusPoint ?? '실시간 분석'}
+                message={liveCoaching?.feedbackText ?? '페이스가 안정적이에요. 이 리듬으로 1km만 더 가볼까요?'}
+              />
+              {/* 코칭 생성 시마다 음성을 자동 재생 (uri 변경 → autoPlay) */}
+              {coachVoiceUrl && <RSVoicePlayer uri={coachVoiceUrl} autoPlay />}
+            </View>
+
+            {/* Micro row */}
+            <View className="px-4 pt-[10px] flex-row gap-[6px]">
+              <MicroStat label="케이던스" value={String(cad)} unit="spm" />
+              <MicroStat label="좌·우 균형" value={foot.balance} />
+              <MicroStat label="보폭" value="1.12" unit="m" />
+            </View>
+          </View>
+
+          {/* 슬라이드 2 — 발 압력 분포 */}
+          <View style={{ width }}>
+            <View className="px-4">
+              <RSCard style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
+                <View className="flex-row justify-between items-center mb-[10px]">
+                  <Text className="text-[11px] text-t3 tracking-[0.66px] uppercase font-semibold">
+                    발 압력 · 실시간
+                  </Text>
+                  <Text className="text-[11px] text-purple-200">
+                    {foot.connected ? `균형 ${foot.balance}` : '시뮬레이션'}
+                  </Text>
+                </View>
+                <View className="flex-row justify-center gap-[36px]">
+                  <FootPressure side="L" fsr={foot.lFsr} />
+                  <FootPressure side="R" fsr={foot.rFsr} />
+                </View>
+              </RSCard>
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* 페이지 인디케이터 */}
+        <PageDots count={2} active={page} />
+      </View>
 
       {/* Actions (두 페이지 공유) */}
       <View className="px-4 pb-[14px] flex-row gap-[10px]">
