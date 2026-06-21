@@ -2,10 +2,11 @@ import { View, Text, Pressable, ScrollView, Switch } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { LightShell, ProfileAvatar } from '@/components/domain';
-import { logout } from '@/api';
+import { logout, readAllRuns } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useInsoleStore } from '@/stores/insoleStore';
@@ -15,14 +16,33 @@ import { refreshToken } from '@/utils/storage';
 import type { TabScreenProps } from '@/types/navigation';
 
 export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
-  const { name, email, age, weight, avatarUri } = useProfileStore();
+  const { name, email, age, weight, avatarUri, joinedAt, runCount, totalDistanceKm, setStats } = useProfileStore();
   const clearSession = useAuthStore((s) => s.clearSession);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const insoleL = useInsoleStore((s) => s.L);
   const insoleR = useInsoleStore((s) => s.R);
   // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(이름만, 항상 포함)
   const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + 1;
   const { notifications, distanceUnit, setNotifications, toggleDistanceUnit } = useSettingsStore();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  // 화면 진입 시 러닝 기록 합계(횟수·거리)를 최신값으로 갱신한다. (가입일은 로그인 응답값 유지)
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) return;
+      let cancelled = false;
+      readAllRuns()
+        .then((res) => {
+          if (!cancelled) setStats({ runCount: res.totalCount, totalDistanceKm: res.totalDistance });
+        })
+        .catch(() => {
+          // 통계 갱신 실패는 무시 — 로그인 응답으로 시드된 값/'--' 가 유지된다.
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated, setStats]),
+  );
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -51,7 +71,13 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
           <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>설정</Text>
         </View>
 
-        <ProfileCard name={name} email={email} avatarUri={avatarUri} onEdit={() => navigation.navigate('EditProfile')} />
+        <ProfileCard
+          name={name}
+          email={email}
+          avatarUri={avatarUri}
+          meta={`가입 ${fmtJoinedDate(joinedAt)} · ${runCount ?? '--'}회 러닝 · ${fmtTotalDistance(totalDistanceKm)}km`}
+          onEdit={() => navigation.navigate('EditProfile')}
+        />
 
         <SettingsSection icon="👤" title="프로필">
           <SettingsRow label="나이" value={age} unit="세" />
@@ -101,7 +127,7 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
             }
           />
           <SettingsDivider />
-          <SettingsRow label="앱 버전" value="2.4.1" mute />
+          <SettingsRow label="앱 버전" value="0.0.1" mute />
         </SettingsSection>
 
         <Pressable
@@ -130,15 +156,31 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   );
 };
 
+// 가입 날짜(ISO/date) → "2024.03". 값이 없으면 "--".
+const fmtJoinedDate = (iso: string | null): string => {
+  if (!iso) return '--';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--';
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// 누적 거리(km) → 표시 문자열. 100km 미만은 소수 1자리, 이상은 정수. 값이 없으면 "--".
+const fmtTotalDistance = (km: number | null): string => {
+  if (km == null) return '--';
+  return km >= 100 ? String(Math.round(km)) : km.toFixed(1);
+};
+
 const ProfileCard = ({
   name,
   email,
   avatarUri,
+  meta,
   onEdit,
 }: {
   name: string;
   email: string;
   avatarUri: string | null;
+  meta: string;
   onEdit: () => void;
 }) => (
   <LinearGradient
@@ -164,7 +206,7 @@ const ProfileCard = ({
       </View>
       <Text className="text-[12px] font-medium" style={{ color: '#6b5ca5' }}>{email}</Text>
       <Text className="text-[10px] font-semibold mt-1 tracking-[0.4px]" style={{ color: '#9b8cc5' }}>
-        가입 2024.03 · 47회 러닝 · 234km
+        {meta}
       </Text>
     </View>
 

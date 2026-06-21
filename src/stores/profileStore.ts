@@ -8,7 +8,15 @@ interface ProfileState {
   age: string;
   weight: string;
   avatarUri: string | null;
+  /** 가입 날짜 (백엔드 createdAt, ISO/date 문자열) */
+  joinedAt: string | null;
+  /** 누적 러닝 횟수 (백엔드 totalCount) */
+  runCount: number | null;
+  /** 누적 러닝 거리(km) (백엔드 totalDistance) */
+  totalDistanceKm: number | null;
   setProfile: (patch: Partial<Pick<ProfileState, 'name' | 'email' | 'age' | 'weight' | 'avatarUri'>>) => void;
+  /** 백엔드에서 받아온 계정 통계(가입일·횟수·거리)를 갱신 */
+  setStats: (patch: Partial<Pick<ProfileState, 'joinedAt' | 'runCount' | 'totalDistanceKm'>>) => void;
 }
 
 export const useProfileStore = create<ProfileState>((set) => ({
@@ -17,5 +25,9 @@ export const useProfileStore = create<ProfileState>((set) => ({
   age: '32',
   weight: '68.5',
   avatarUri: null,
+  joinedAt: null,
+  runCount: null,
+  totalDistanceKm: null,
   setProfile: (patch) => set(patch),
+  setStats: (patch) => set(patch),
 }));

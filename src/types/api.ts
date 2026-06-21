@@ -43,6 +43,12 @@ export interface UserLoginResponseDto {
   userID: number;
   userName: string;
   email: string;
+  /** 가입 날짜 (date) */
+  createdAt: string;
+  /** 누적 러닝 거리(km) */
+  totalDistance: number;
+  /** 누적 러닝 횟수 */
+  totalCount: number;
   tokenType: string;
   /** API 호출 시 사용하는 액세스 토큰 (1시간 유효) */
   accessToken: string;
