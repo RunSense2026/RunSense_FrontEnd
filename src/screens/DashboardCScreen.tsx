@@ -2,13 +2,13 @@ import { useState } from 'react';
 import { View, Text } from 'react-native';
 import Svg, { Path, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
-import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal, FootPressure } from '@/components/domain';
+import { DarkShell, RSCard, RSCoach, RSButton, EndRunModal, FootPressure, RSVoiceAutoPlay } from '@/components/domain';
 import { fmtPace, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
 import { useInsoleStore } from '@/stores/insoleStore';
-import { cadenceFromSteps, footCoachingFields } from '@/utils/insoleMetrics';
+import { cadenceFromSteps, footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -39,15 +39,19 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
   // 실시간 발 압력 분포(연결 시 실데이터·미연결 시 시뮬레이션) + 좌우 균형.
   const { lFsr, rFsr, balance } = useFootPressure(tick);
 
-  // 러닝 중 1분 간격으로 AI 코칭 생성(연결된 인솔의 발 데이터 포함) → 코치 카드에 표시.
-  // 발 압력은 직전 60초 구간 평균을 footCoachingFields 가 0~100 정규화해 채운다.
-  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => {
+  // 러닝 중 1분 간격으로 AI 코칭 생성(양발 인솔 데이터 포함) → 코치 카드에 표시.
+  // 발 압력은 직전 60초 구간 평균을 footCoachingPayload 가 0~100 정규화해 좌·우 모두 채운다.
+  const {
+    latest: liveCoaching,
+    voiceUrl: coachVoiceUrl,
+    all: collectedCoachings,
+  } = useLiveCoaching(paused, () => {
     const { L, R } = useInsoleStore.getState().drainFootAverages();
     return {
       pace: spkToMinutes(paceSpk),
       heartRate: hr,
       cadence: cad,
-      ...footCoachingFields(L, R),
+      ...footCoachingPayload(L, R),
     };
   });
 
@@ -146,6 +150,8 @@ export const DashboardCScreen = ({ navigation }: ScreenProps<'DashboardC'>) => {
           subtitle={liveCoaching?.focusPoint ?? '폼 분석'}
           message={liveCoaching?.feedbackText ?? '좌우 균형이 좋아요. 어깨를 살짝 내려보세요.'}
         />
+        {/* AI 서버가 합성한 TTS 음성 — 재생바 없이 자동 재생만 (새 음성마다 key 로 처음부터) */}
+        {coachVoiceUrl && <RSVoiceAutoPlay key={coachVoiceUrl} uri={coachVoiceUrl} />}
       </View>
 
       <View className="px-4 pt-3 pb-[14px] flex-row gap-[10px]">

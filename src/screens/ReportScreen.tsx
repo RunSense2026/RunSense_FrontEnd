@@ -7,14 +7,15 @@ import Svg, { Path, Circle, Ellipse, Line, Defs, LinearGradient as SvgGradient, 
 
 import { LightShell, RSTabBar, type TabId } from '@/components/domain';
 import { FOOT_PATH, footPositions } from '@/components/domain/FootPressure';
-import { saveRun, readRun, deleteRun, createCoachingReport, readCoachingReport } from '@/api';
+import { saveRun, readRun, deleteRun, createCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
+  AiCoachingResponseDto,
   RunningActivityCreateRequestDto,
   RunningActivityDetailResponseDto,
   FootSensorDataResponseDto,
 } from '@/types/api';
-import type { AiCoachingReportDto } from '@/types/aiApi';
+import type { AiCoachingLogDto, AiCoachingReportDto } from '@/types/aiApi';
 
 import { fmtPace, fmtTime, secToHms, spkToPace } from '@/utils/format';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
@@ -38,6 +39,14 @@ const MOCK_RUN = {
   cadence: 178,
   formScore: 84,
 };
+
+// 백엔드에 저장된 AI 코칭 → AI 서버 요약 리포트 요청용 로그 목록.
+const toCoachingLogs = (coachings: AiCoachingResponseDto[]): AiCoachingLogDto[] =>
+  coachings.map((c) => ({
+    feedbackText: c.feedbackText,
+    focusPoint: c.focusPoint || null,
+    recExercise: c.recExercise || null,
+  }));
 
 const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -95,21 +104,28 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     };
   }, [activityId]);
 
+  // 저장된 기록을 열었을 때는 백엔드에 함께 저장된 코칭들을 AI 서버로 넘겨 요약을 다시 만든다.
+  // (AI 서버는 리포트를 저장하지 않으므로 조회 대신 매번 생성한다)
   useEffect(() => {
-    if (activityId == null) return;
+    const logs = detail?.aiCoachings;
+    if (activityId == null || !logs || logs.length === 0) return;
     let cancelled = false;
-    readCoachingReport(activityId)
+    setReportGenerating(true);
+    createCoachingReport(toCoachingLogs(logs))
       .then((r) => {
         if (!cancelled) setReport(r);
       })
       .catch(() => {
-        // 리포트가 아직 없거나 AI 서버 미응답 시 백엔드 코칭/목업으로 폴백한다.
+        // AI 서버 미응답 시 백엔드 코칭/목업으로 폴백한다.
         if (!cancelled) setReport(null);
+      })
+      .finally(() => {
+        if (!cancelled) setReportGenerating(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [activityId]);
+  }, [activityId, detail]);
 
   // 저장된 기록을 기록 탭에서 연 직후, 상세가 도착하기 전(렌더링 전) 구간.
   // 이때만 하드코딩 목업 대신 '--' 를 표시하고, 로딩이 끝나면 평소처럼(목업 폴백 포함) 렌더한다.
@@ -170,16 +186,38 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     }, [isViewingSaved, navigation]),
   );
 
-  // 러닝 기록을 백엔드에 저장한 뒤 AI 코칭 요약 리포트를 생성·저장한다.
+  // 갓 뛴 리포트: 러닝 중 수집한 코칭들을 그대로 AI 서버에 넘겨 요약을 만든다.
+  // 리포트 생성은 백엔드 저장(activityId)과 무관하므로 비로그인 상태에서도 동작한다.
+  useEffect(() => {
+    if (isViewingSaved) return;
+    const logs = runSummary?.coachings ?? [];
+    if (logs.length === 0) return;
+    let cancelled = false;
+    setReportGenerating(true);
+    createCoachingReport(logs)
+      .then((r) => {
+        if (!cancelled) setReport(r);
+      })
+      .catch(() => {
+        // 리포트 생성 실패는 조용히 무시 — 본문은 백엔드 코칭/목업으로 폴백된다.
+      })
+      .finally(() => {
+        if (!cancelled) setReportGenerating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isViewingSaved, runSummary]);
+
+  // 러닝 기록을 백엔드에 저장한다.
   // silent=true 면 (러닝 종료 후 자동 진입 시) 성공 알림 없이 조용히 처리한다.
-  const runSaveAndReport = async ({ silent }: { silent: boolean }) => {
+  const saveRunToServer = async ({ silent }: { silent: boolean }) => {
     if (saveState !== 'idle') return;
     setSaveState('saving');
     try {
       const payload = buildRunPayload(runSummary);
-      const result = await saveRun(payload); // 1) 백엔드에 러닝 기록 저장
+      const result = await saveRun(payload);
       setSaveState('saved');
-      void generateReport(result.activityId); // 2) AI 코칭 요약 리포트 생성·저장
       if (!silent) Alert.alert('저장 완료', `러닝 기록이 저장되었어요. (#${result.activityId})`);
     } catch (e) {
       setSaveState('idle');
@@ -191,7 +229,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     }
   };
 
-  // 업로드 아이콘(수동 저장) — 비로그인 시 로그인 유도 후 저장+코칭 생성.
+  // 업로드 아이콘(수동 저장) — 비로그인 시 로그인 유도 후 기록 저장.
   const handleSave = () => {
     if (saveState !== 'idle') return;
     if (!isAuthenticated) {
@@ -201,7 +239,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
       ]);
       return;
     }
-    void runSaveAndReport({ silent: false });
+    void saveRunToServer({ silent: false });
   };
 
   // 휴지통 아이콘(저장된 기록 삭제) — 확인 후 백엔드에서 삭제하고 이전 화면(기록 탭)으로 돌아간다.
@@ -229,30 +267,17 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     ]);
   };
 
-  // 갓 뛴 리포트(activityId 없음)로 진입하면 — 러닝 종료 직후 — 기록을 자동 저장하고
-  // AI 코칭/음성을 생성한다. 로그인 상태에서 한 번만 실행한다. (비로그인 시 수동 버튼으로 유도)
+  // 갓 뛴 리포트(activityId 없음)로 진입하면 — 러닝 종료 직후 — 기록을 자동 저장한다.
+  // 로그인 상태에서 한 번만 실행한다. (비로그인 시 수동 버튼으로 유도)
   const autoSavedRef = useRef(false);
   useEffect(() => {
     if (isViewingSaved) return;
     if (autoSavedRef.current) return;
     if (!isAuthenticated) return;
     autoSavedRef.current = true;
-    void runSaveAndReport({ silent: true });
+    void saveRunToServer({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isViewingSaved, isAuthenticated]);
-
-  // 저장된 activityId 로 AI 코칭 요약 리포트를 생성·저장하고 화면에 반영한다.
-  const generateReport = async (newActivityId: number) => {
-    setReportGenerating(true);
-    try {
-      const r = await createCoachingReport(newActivityId);
-      setReport(r);
-    } catch {
-      // 리포트 생성 실패는 조용히 무시 — 본문은 백엔드 코칭/목업으로 폴백된다.
-    } finally {
-      setReportGenerating(false);
-    }
-  };
 
   return (
     <LightShell>

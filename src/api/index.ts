@@ -4,7 +4,6 @@ export { saveRun, readAllRuns, readRunsByDate, readRun, deleteRun } from './run'
 export {
   createCoaching,
   createCoachingReport,
-  readCoachingReport,
   readCoachingsByActivity,
   readCoaching,
   updateCoaching,

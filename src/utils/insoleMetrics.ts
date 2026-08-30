@@ -1,5 +1,7 @@
 // FSR 인솔 데이터로부터 케이던스·착지 히트맵을 계산하는 순수 함수 모음.
 
+import type { AiFootDataDto, AiFootHitmapDto } from '@/types/aiApi';
+
 export const N_SENSORS = 5;
 /** 뒤꿈치(5번) 센서의 avg 배열 인덱스 — 케이던스 검출에 사용 */
 export const HEEL_INDEX = 4;
@@ -37,7 +39,7 @@ export const FSR_MAX = 1023;
 export const toFsr = (avg: number[]): number[] =>
   avg.map((v) => Math.max(0, Math.min(1, v / FSR_MAX)));
 
-// ─── AI 코칭 전송용 풋필드 ────────────────────────────────────────
+// ─── AI 코칭 전송용 풋 페이로드 ───────────────────────────────────
 
 /** 한쪽 발의 구간 평균(insoleStore.drainFootAverages 결과) */
 export interface FootAvg {
@@ -47,40 +49,74 @@ export interface FootAvg {
   total: number;
 }
 
-/** AI 코칭 요청(/ai/coaching)에 실리는 풋센서 필드 */
-export interface CoachingFootFields {
-  footSide: 'left' | 'right' | null;
-  heelStrikeRate: number | null;
-  hitmapJson: Record<string, number> | null;
-}
+/**
+ * 인솔 미연결 시 사용하는 기본 압력 분포(%).
+ * AI 서버는 left_foot·right_foot 을 모두 필수로 요구하므로, 센서가 없을 때도
+ * 요청이 422 로 거절되지 않도록 중립적인 분포를 채워 보낸다.
+ */
+const NEUTRAL_HITMAP: AiFootHitmapDto = {
+  forefootLeft: 22,
+  forefootRight: 20,
+  midfootLeft: 16,
+  midfootRight: 16,
+  heel: 46,
+};
+
+const NEUTRAL_FOOT: AiFootDataDto = {
+  pronationType: 'neutral',
+  heelStrikeRate: 46,
+  hitmap: NEUTRAL_HITMAP,
+};
 
 /**
- * 양발 구간 평균 → AI 코칭 전송용 풋필드.
- * total 압력이 더 큰 쪽 발을 골라 센서별 평균을 0~100 으로 정규화한다.
+ * 앞꿈치 안쪽/바깥쪽 압력 비율로 회내(프로네이션) 유형을 추정한다.
+ * 안쪽(엄지 쪽)에 쏠리면 과내전, 바깥쪽(새끼발가락 쪽)에 쏠리면 회외로 본다.
+ * (AI 서버 스펙 예시가 영문 값이므로 영문으로 보낸다)
+ */
+const pronationOf = (hitmap: AiFootHitmapDto): string => {
+  const inner = hitmap.forefootLeft + hitmap.midfootLeft;
+  const outer = hitmap.forefootRight + hitmap.midfootRight;
+  const sum = inner + outer;
+  if (sum <= 0) return 'neutral';
+  const innerShare = inner / sum;
+  if (innerShare >= 0.62) return 'overpronation';
+  if (innerShare <= 0.38) return 'supination';
+  return 'neutral';
+};
+
+/**
+ * 한쪽 발의 구간 평균 → AI 코칭 요청용 발 데이터.
  * 실제 센서 인덱스: 0 엄지 · 1 엄지밑(안쪽 앞꿈치) · 2 새끼발가락밑(바깥 앞꿈치) · 3 중간(중족) · 4 뒤꿈치.
- * 백엔드 hitmapJson 5키(forefoot_left/right·midfoot_left/right·heel)에 맞춰 매핑한다.
+ * hitmap 5키(forefoot_left/right·midfoot_left/right·heel)에 맞춰 0~100 으로 정규화한다.
  * (중족 센서는 1개뿐이라 midfoot_left/right 에 같은 값을 넣는다.)
  */
-export const footCoachingFields = (
-  L: FootAvg | null,
-  R: FootAvg | null,
-): CoachingFootFields => {
-  const side: 'L' | 'R' | null =
-    L && R ? (L.total >= R.total ? 'L' : 'R') : L ? 'L' : R ? 'R' : null;
-  const data = side === 'L' ? L : side === 'R' ? R : null;
-  if (!side || !data) return { footSide: null, heelStrikeRate: null, hitmapJson: null };
+const toFootData = (data: FootAvg): AiFootDataDto => {
   const toP = (v: number) => Math.round((v / FSR_MAX) * 100);
   const midfoot = toP(data.avg[3] ?? 0); // 중간(중족) — 센서 1개
+  const hitmap: AiFootHitmapDto = {
+    // 안쪽 앞꿈치 = 엄지/엄지밑 중 큰 값, 바깥 앞꿈치 = 새끼발가락밑
+    forefootLeft: Math.max(toP(data.avg[0] ?? 0), toP(data.avg[1] ?? 0)),
+    forefootRight: toP(data.avg[2] ?? 0),
+    midfootLeft: midfoot,
+    midfootRight: midfoot,
+    heel: toP(data.avg[HEEL_INDEX] ?? 0),
+  };
   return {
-    footSide: side === 'L' ? 'left' : 'right',
-    heelStrikeRate: toP(data.avg[HEEL_INDEX] ?? 0),
-    hitmapJson: {
-      // 안쪽 앞꿈치 = 엄지/엄지밑 중 큰 값, 바깥 앞꿈치 = 새끼발가락밑
-      forefoot_left: Math.max(toP(data.avg[0] ?? 0), toP(data.avg[1] ?? 0)),
-      forefoot_right: toP(data.avg[2] ?? 0),
-      midfoot_left: midfoot,
-      midfoot_right: midfoot,
-      heel: toP(data.avg[4] ?? 0),
-    },
+    pronationType: pronationOf(hitmap),
+    heelStrikeRate: hitmap.heel,
+    hitmap,
   };
 };
+
+/**
+ * 양발 구간 평균 → AI 코칭 요청의 left_foot / right_foot.
+ * 예전에는 압력이 큰 쪽 한 발만 보냈지만, 서버가 양발을 모두 필수로 받으므로 둘 다 채운다.
+ * 한쪽 인솔만 연결된 경우 반대쪽은 중립값으로 채워 요청이 거절되지 않게 한다.
+ */
+export const footCoachingPayload = (
+  L: FootAvg | null,
+  R: FootAvg | null,
+): { leftFoot: AiFootDataDto; rightFoot: AiFootDataDto } => ({
+  leftFoot: L ? toFootData(L) : NEUTRAL_FOOT,
+  rightFoot: R ? toFootData(R) : NEUTRAL_FOOT,
+});

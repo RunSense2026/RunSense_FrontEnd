@@ -10,14 +10,13 @@ import {
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Stop } from 'react-native-svg';
 
 import { DarkShell, RSCard, RSCoach, RSSparkline, RSButton, EndRunModal, FootPressure, RSVoiceAutoPlay } from '@/components/domain';
-import { resolveVoiceUrl } from '@/api';
 import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useInsoleStore } from '@/stores/insoleStore';
-import { footCoachingFields } from '@/utils/insoleMetrics';
+import { footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -58,19 +57,20 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   const hrTrace = useMemo(() => genHrTrace(tick), [tick]);
 
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
-  // 인솔 연결 시 직전 60초 구간 발 압력 평균(0~100 정규화)을 함께 보낸다.
-  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => {
+  // 직전 60초 구간의 양발 압력 평균(0~100 정규화)을 왼발·오른발 모두 실어 보낸다.
+  const {
+    latest: liveCoaching,
+    voiceUrl: coachVoiceUrl,
+    all: collectedCoachings,
+  } = useLiveCoaching(paused, () => {
     const { L, R } = useInsoleStore.getState().drainFootAverages();
     return {
       pace: spkToMinutes(paceSpk),
       heartRate: hr,
       cadence: cad,
-      ...footCoachingFields(L, R),
+      ...footCoachingPayload(L, R),
     };
   });
-
-  // 코칭 음성 파일 경로 → 재생 가능한 절대 URL (없으면 null).
-  const coachVoiceUrl = resolveVoiceUrl(liveCoaching?.voiceFile);
 
   const deviation = Math.max(-30, Math.min(30, paceSpk - target));
   const ringPct = 0.5 + -deviation / 60;

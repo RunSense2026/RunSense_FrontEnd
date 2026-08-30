@@ -146,8 +146,6 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
 
   drainFootAverages: () => {
     const { _accum } = get();
-    // [임시 진단] 코칭 전송 시점의 누적 패킷 수 확인용. 원인 파악 후 제거할 것.
-    if (__DEV__) console.log(`[insole] drain — L:${_accum.L.count}건, R:${_accum.R.count}건`);
     const build = (a: FootAccum): FootAverage | null =>
       a.count > 0
         ? { avg: a.sumAvg.map((s) => s / a.count), total: a.sumTotal / a.count }

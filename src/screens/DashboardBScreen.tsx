@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { View, Text } from 'react-native';
 
-import { DarkShell, RSCoach, RSButton, EndRunModal } from '@/components/domain';
+import { DarkShell, RSCoach, RSButton, EndRunModal, RSVoiceAutoPlay } from '@/components/domain';
 import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
+import { useInsoleStore } from '@/stores/insoleStore';
+import { footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -21,11 +23,20 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
 
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
-  const { latest: liveCoaching, all: collectedCoachings } = useLiveCoaching(paused, () => ({
-    pace: spkToMinutes(paceSpk),
-    heartRate: hr,
-    cadence: cad,
-  }));
+  // 양발 센서 데이터는 필수라, 직전 60초 구간 평균(미연결 시 중립값)을 함께 보낸다.
+  const {
+    latest: liveCoaching,
+    voiceUrl: coachVoiceUrl,
+    all: collectedCoachings,
+  } = useLiveCoaching(paused, () => {
+    const { L, R } = useInsoleStore.getState().drainFootAverages();
+    return {
+      pace: spkToMinutes(paceSpk),
+      heartRate: hr,
+      cadence: cad,
+      ...footCoachingPayload(L, R),
+    };
+  });
 
   return (
     <DarkShell recording>
@@ -71,6 +82,8 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
           subtitle={liveCoaching?.focusPoint ?? '실시간'}
           message={liveCoaching?.feedbackText ?? '좋은 페이스에요. 어깨 힘만 살짝 풀어보세요.'}
         />
+        {/* AI 서버가 합성한 TTS 음성 — 재생바 없이 자동 재생만 (새 음성마다 key 로 처음부터) */}
+        {coachVoiceUrl && <RSVoiceAutoPlay key={coachVoiceUrl} uri={coachVoiceUrl} />}
       </View>
 
       <View className="px-4 pb-[14px] flex-row gap-[10px]">
