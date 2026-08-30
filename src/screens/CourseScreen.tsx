@@ -8,7 +8,7 @@ import { fetchWeatherData, fetchAirQualityData, fetchSkyCode } from '@/api';
 import { useResolvedLocation, type ResolvedLocation } from '@/hooks/useResolvedLocation';
 import { gradients } from '@/theme/tokens';
 
-import type { WeatherItem } from '@/types/publicApi';
+import type { AirQualityItem, WeatherItem } from '@/types/publicApi';
 import type { TabScreenProps } from '@/types/navigation';
 
 type CourseSort = 'score' | 'name';
@@ -142,81 +142,104 @@ const CourseSortDropdown = ({
   );
 };
 
+/** 대기질 조회 실패 시 다시 시도하기까지의 간격(ms) */
+const AIR_RETRY_MS = 20000;
+
+/** 대기질 카드 표시값 */
+interface AirDisplay {
+  value: string;
+  label: string;
+  grade: string;
+}
+
+// 에어코리아 응답 → 카드 표시값(수치·등급 라벨).
+const toAirDisplay = (air: AirQualityItem): AirDisplay => {
+  // 초미세먼지(PM2.5)가 통신 장애·점검으로 '-' 로 올 경우 미세먼지(PM10) 값으로 대체한다.
+  let value = air.pm25Value;
+  if (!value || value === '-') {
+    value = air.pm10Value && air.pm10Value !== '-' ? air.pm10Value : '-';
+  }
+
+  const numeric = parseInt(value, 10);
+  let grade: string;
+  if (!isNaN(numeric)) {
+    if (numeric <= 15) grade = '1';
+    else if (numeric <= 35) grade = '2';
+    else if (numeric <= 75) grade = '3';
+    else grade = '4';
+  } else {
+    // 수치가 숫자가 아닐 때는 API 가 준 등급을 쓴다.
+    grade = air.pm25Grade || air.khaiGrade || '2';
+  }
+
+  const label =
+    grade === '1' ? '좋음' : grade === '3' ? '나쁨' : grade === '4' ? '매우 나쁨' : '보통';
+  return { value, label, grade };
+};
+
 const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
   const [condition, setCondition] = useState<WeatherCondition>('sunny');
-  const [airData, setAirData] = useState<{ value: string; label: string; grade: string } | null>(null);
+  const [airData, setAirData] = useState<AirDisplay | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const { nx, ny, station, name: locationName, ready } = location;
 
+  // 날씨(기상청) — 격자(nx·ny)가 정해지면 곧바로 조회한다.
+  // 대기질(에어코리아)은 서버가 달라 따로 조회한다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
   useEffect(() => {
-    // 위치 해석이 끝난 뒤에 날씨/대기질을 조회한다.
     if (!ready) return;
 
     let cancelled = false;
-    const getCourseData = async () => {
+    (async () => {
       setLoading(true);
       setError(null);
-      try {
-        const [weather, air, sky] = await Promise.all([
-          fetchWeatherData(nx, ny),
-          fetchAirQualityData(station),
-          fetchSkyCode(nx, ny),
-        ]);
-        if (cancelled) return;
+      const [weatherRes, skyRes] = await Promise.allSettled([
+        fetchWeatherData(nx, ny),
+        fetchSkyCode(nx, ny),
+      ]);
+      if (cancelled) return;
 
-        setWeatherItems(weather);
-        setCondition(deriveWeatherCondition(findPty(weather), sky));
-
-        if (air) {
-          let displayValue = air.pm25Value;
-          if (!displayValue || displayValue === '-') {
-            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
-          }
-
-          const numericVal = parseInt(displayValue, 10);
-          let grade = '2';
-          let label = '보통';
-
-          if (!isNaN(numericVal)) {
-            if (numericVal <= 15) {
-              grade = '1';
-              label = '좋음';
-            } else if (numericVal <= 35) {
-              grade = '2';
-              label = '보통';
-            } else if (numericVal <= 75) {
-              grade = '3';
-              label = '나쁨';
-            } else {
-              grade = '4';
-              label = '매우 나쁨';
-            }
-          } else {
-            // 수치가 숫자가 아닐 시 API에서 온 등급 사용
-            grade = air.pm25Grade || air.khaiGrade || '2';
-            if (grade === '1') label = '좋음';
-            else if (grade === '2') label = '보통';
-            else if (grade === '3') label = '나쁨';
-            else if (grade === '4') label = '매우 나쁨';
-          }
-
-          setAirData({ value: displayValue, label, grade });
-        }
-      } catch (err) {
-        if (!cancelled) setError('날씨/대기질 정보를 불러오지 못했습니다.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (weatherRes.status === 'fulfilled') {
+        setWeatherItems(weatherRes.value);
+        const sky = skyRes.status === 'fulfilled' ? skyRes.value : undefined;
+        setCondition(deriveWeatherCondition(findPty(weatherRes.value), sky));
+      } else {
+        setError('날씨 정보를 불러오지 못했어요.');
       }
-    };
+      setLoading(false);
+    })();
 
-    getCourseData();
     return () => {
       cancelled = true;
     };
-  }, [ready, nx, ny, station]);
+  }, [ready, nx, ny]);
+
+  // 대기질(에어코리아) — 측정소가 정해지면 조회. 실패해도 날씨 표시에는 영향을 주지 않는다.
+  // 서버 혼잡(504)이 잦아, 실패하면 직전 값을 유지한 채 잠시 뒤 한 번 더 시도한다.
+  useEffect(() => {
+    if (!ready) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const load = () => {
+      fetchAirQualityData(station)
+        .then((air) => {
+          if (!cancelled && air) setAirData(toAirDisplay(air));
+        })
+        .catch(() => {
+          if (!cancelled) retryTimer = setTimeout(load, AIR_RETRY_MS);
+        });
+    };
+    load();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [ready, station]);
 
   if (loading) {
     return (
@@ -238,8 +261,9 @@ const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
   const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
   const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '48';
 
-  const airValue = airData?.value ?? '32';
-  const airLabel = airData?.label ?? '좋음';
+  // 대기질 조회 실패(에어코리아 점검·일시 오류) 시 '--' 로 표시한다.
+  const airValue = airData?.value ?? '--';
+  const airLabel = airData?.label ?? '정보 없음';
   const grade = airData?.grade ?? '2';
 
   // 하단 눈금 바(초록, 노랑, 주황, 빨강)에 맞춘 색상 및 텍스트 매핑

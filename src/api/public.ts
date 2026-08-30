@@ -3,6 +3,106 @@ import { getEnvConfig } from '@/constants/env';
 import { wgs84ToTM } from '@/utils/tmCoord';
 import type { WeatherItem, AirQualityItem, AirForecastItem } from '@/types/publicApi';
 
+// 공공데이터포털(data.go.kr)은 트래픽이 몰리면 간헐적으로 504 SERVICETIMEOUT_ERROR 를 돌려준다.
+// (에어코리아 실시간 측정 조회는 체감 실패율이 높다) 타임아웃 없이 기다리다 화면이 멈추지 않도록
+// 제한을 두고, '일시적'으로 판정된 오류만 간격을 늘려가며 재시도한다.
+const PUBLIC_TIMEOUT_MS = 10000;
+const PUBLIC_RETRIES = 2;
+/** 재시도 간격(ms) — attempt 번째 실패 후 대기 시간 */
+const RETRY_BACKOFF_MS = [800, 1600, 3200, 5000];
+
+/** 서버 혼잡 등 잠시 뒤 다시 하면 될 오류 코드 (그 외 — 키·파라미터·쿼터 오류는 재시도 무의미) */
+const TRANSIENT_MSG = /SERVICETIMEOUT|TIMEOUT|BUSY|INTERNAL_ERROR|UNKNOWN_ERROR/i;
+
+/** data.go.kr 오류를 재시도 가능 여부와 함께 나타내는 에러 */
+class PublicApiError extends Error {
+  constructor(message: string, readonly transient: boolean) {
+    super(message);
+    this.name = 'PublicApiError';
+  }
+}
+
+/** 재시도할 만한 일시적 오류인지 — 타임아웃/네트워크 끊김/5xx 또는 일시적 오류 코드 */
+const isRetryable = (e: unknown): boolean => {
+  if (e instanceof PublicApiError) return e.transient;
+  if (!axios.isAxiosError(e)) return false;
+  const status = e.response?.status;
+  return !e.response || e.code === 'ECONNABORTED' || (status !== undefined && status >= 500);
+};
+
+/**
+ * 응답 본문에 실린 오류를 찾아낸다(정상이면 null).
+ * data.go.kr 은 오류를 (1) XML 문자열, (2) `OpenAPI_ServiceResponse` 봉투,
+ * (3) 200 + `response.header.resultCode !== '00'` 세 가지 형태로 준다.
+ */
+const findApiError = (data: unknown): PublicApiError | null => {
+  if (typeof data === 'string') return new PublicApiError('오류 응답(XML)', false);
+
+  const body = data as {
+    OpenAPI_ServiceResponse?: { cmmMsgHeader?: { errMsg?: string; returnAuthMsg?: string } };
+    response?: { header?: { resultCode?: string; resultMsg?: string } };
+  };
+
+  const envelope = body?.OpenAPI_ServiceResponse?.cmmMsgHeader;
+  if (envelope) {
+    const msg = envelope.errMsg ?? envelope.returnAuthMsg ?? '알 수 없는 오류';
+    return new PublicApiError(msg, TRANSIENT_MSG.test(msg));
+  }
+
+  const header = body?.response?.header;
+  if (header?.resultCode && header.resultCode !== '00') {
+    const msg = header.resultMsg ?? header.resultCode;
+    return new PublicApiError(msg, TRANSIENT_MSG.test(msg));
+  }
+
+  return null;
+};
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 기상청 응답 봉투 — items.item 배열 */
+interface KmaEnvelope {
+  response?: { body?: { items?: { item?: WeatherItem[] } } };
+}
+
+/** 에어코리아 응답 봉투 — items 배열 */
+interface AirKoreaEnvelope<T> {
+  response?: { body?: { items?: T[] } };
+}
+
+/** 근접 측정소 항목 (getNearbyMsrstnList) */
+interface NearbyStationItem {
+  stationName?: string;
+  addr?: string;
+  tm?: string | number;
+}
+
+/** 공공 API GET — 타임아웃을 걸고, 일시적 오류만 간격을 늘려가며 재시도한다. */
+const getPublic = async <T>(
+  url: string,
+  { retries = PUBLIC_RETRIES, timeout = PUBLIC_TIMEOUT_MS } = {},
+): Promise<T> => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const res = await axios.get(url, { timeout });
+      const apiError = findApiError(res.data);
+      if (apiError) throw apiError;
+      return res.data as T;
+    } catch (e) {
+      lastError = e;
+      if (attempt === retries || !isRetryable(e)) break;
+      await delay(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+    }
+  }
+  if (__DEV__) {
+    // 실패 원인 파악용 — 키가 노출되지 않도록 쿼리스트링은 제외하고 남긴다.
+    // eslint-disable-next-line no-console
+    console.warn('[public-api] 요청 실패:', url.split('?')[0], String(lastError));
+  }
+  throw lastError;
+};
+
 /** 역지오코딩 결과 — 표시용 지역명 + 대기질 측정소로 쓸 자치구명 */
 export interface GeoPlace {
   /** 화면 표시용 (예: "서울 · 강남구") */
@@ -59,17 +159,13 @@ export const fetchWeatherData = async (
     `&pageNo=1&numOfRows=10&dataType=JSON` +
     `&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
 
-  const res = await axios.get(requestUrl);
-
-  // 공공 API 에러 발생 시 JSON이 아닌 XML 텍스트로 에러 내용을 반환하는 경우를 방어합니다.
-  if (typeof res.data === 'string') {
-    throw new Error('API 연동 에러 - 콘솔 로그를 확인하세요.');
-  }
-  if (!res.data?.response?.body?.items?.item) {
+  const data = await getPublic<KmaEnvelope>(requestUrl);
+  const items = data?.response?.body?.items?.item;
+  if (!items) {
     throw new Error('기상청 데이터 응답 구조가 다릅니다.');
   }
-  
-  return res.data.response.body.items.item;
+
+  return items;
 };
 
 /**
@@ -97,8 +193,8 @@ export const fetchSkyCode = async (
       `&pageNo=1&numOfRows=60&dataType=JSON` +
       `&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
 
-    const res = await axios.get(requestUrl);
-    const items: WeatherItem[] | undefined = res.data?.response?.body?.items?.item;
+    const data = await getPublic<KmaEnvelope>(requestUrl);
+    const items: WeatherItem[] | undefined = data?.response?.body?.items?.item;
     if (!Array.isArray(items)) return undefined;
 
     // 가장 가까운 예보시각의 SKY 값을 사용.
@@ -142,10 +238,12 @@ export const fetchNearestStation = async (
       `&returnType=json&numOfRows=10&pageNo=1` +
       `&tmX=${tmX}&tmY=${tmY}&ver=1.1`;
 
-    const res = await axios.get(requestUrl);
-    if (typeof res.data === 'string') return null;
-
-    const items = res.data?.response?.body?.items;
+    // 측정소 조회가 늦어지면 날씨 표시 자체가 밀리므로, 짧게 한 번만 시도하고 실패 시 자치구명으로 폴백한다.
+    const data = await getPublic<AirKoreaEnvelope<NearbyStationItem>>(requestUrl, {
+      retries: 0,
+      timeout: 6000,
+    });
+    const items = data?.response?.body?.items;
     if (!Array.isArray(items) || items.length === 0) return null;
 
     // API 가 거리 오름차순으로 주지만, 안전하게 tm(거리) 최소값을 고른다.
@@ -165,18 +263,15 @@ export const fetchAirQualityData = async (
 ): Promise<AirQualityItem | null> => {
   const { airKoreaApiUrl, publicApiKey } = getEnvConfig();
 
+  // ver=1.3 을 줘야 PM2.5(pm25Value·pm25Grade)가 응답에 포함된다. (미지정 시 PM10 항목만 내려옴)
   const requestUrl = `${airKoreaApiUrl}/getMsrstnAcctoRltmMesureDnsty` +
     `?serviceKey=${publicApiKey}` +
-    `&returnType=json&numOfRows=1&pageNo=1` +
+    `&returnType=json&numOfRows=1&pageNo=1&ver=1.3` +
     `&stationName=${encodeURIComponent(stationName)}&dataTerm=DAILY`;
 
-  const res = await axios.get(requestUrl);
-
-  if (typeof res.data === 'string') {
-    throw new Error('대기질 API 연동 에러');
-  }
-
-  const items = res.data?.response?.body?.items;
+  // 이 엔드포인트가 유독 자주 혼잡(504)하므로 재시도를 넉넉히 준다. (날씨 표시를 막지 않는 백그라운드 조회)
+  const data = await getPublic<AirKoreaEnvelope<AirQualityItem>>(requestUrl, { retries: 3 });
+  const items = data?.response?.body?.items;
   return items && items.length > 0 ? items[0] : null;
 };
 
@@ -192,12 +287,7 @@ export const fetchAirForecastData = async (
     `&returnType=json&numOfRows=1&pageNo=1` +
     `&searchDate=${searchDate}&InformCode=${informCode}`;
 
-  const res = await axios.get(requestUrl);
-
-  if (typeof res.data === 'string') {
-    throw new Error('대기질 예보 API 연동 에러');
-  }
-  
-  const items = res.data?.response?.body?.items;
+  const data = await getPublic<AirKoreaEnvelope<AirForecastItem>>(requestUrl);
+  const items = data?.response?.body?.items;
   return items && items.length > 0 ? items[0] : null;
 };

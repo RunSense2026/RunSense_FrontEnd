@@ -10,7 +10,7 @@ import { WeatherIcon, deriveWeatherCondition, findPty, conditionLabel, type Weat
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useAuthStore } from '@/stores/authStore';
 import { useWeeklyGoalStore } from '@/stores/weeklyGoalStore';
-import type { WeatherItem } from '@/types/publicApi';
+import type { AirQualityItem, WeatherItem } from '@/types/publicApi';
 import type { RunningActivityResponseDto } from '@/types/api';
 import type { HomeScreenProps } from '@/types/navigation';
 
@@ -110,89 +110,108 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
   );
 };
 
+/** 대기질 조회 실패 시 다시 시도하기까지의 간격(ms) */
+const AIR_RETRY_MS = 20000;
+
+/** 대기질 카드 표시값 */
+interface AirDisplay {
+  value: string;
+  label: string;
+  color: string;
+  badgeBg: string;
+}
+
+// 에어코리아 응답 → 카드 표시값. 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따라 색·문구를 정한다.
+const toAirDisplay = (air: AirQualityItem): AirDisplay => {
+  // 초미세먼지(PM2.5)가 통신 장애·점검으로 '-' 로 올 경우 미세먼지(PM10) 값으로 대체한다.
+  let value = air.pm25Value;
+  if (!value || value === '-') {
+    value = air.pm10Value && air.pm10Value !== '-' ? air.pm10Value : '-';
+  }
+
+  const numeric = parseInt(value, 10);
+  let grade: string;
+  if (!isNaN(numeric)) {
+    if (numeric <= 15) grade = '1';
+    else if (numeric <= 35) grade = '2';
+    else if (numeric <= 75) grade = '3';
+    else grade = '4';
+  } else {
+    // 수치가 숫자가 아닐 때는 API 가 준 등급을 쓴다.
+    grade = air.pm25Grade || air.khaiGrade || '2';
+  }
+
+  if (grade === '1') return { value, label: '최고', color: '#059669', badgeBg: 'rgba(16,185,129,0.15)' };
+  if (grade === '3') return { value, label: '주의', color: '#f59e0b', badgeBg: 'rgba(245,158,11,0.15)' };
+  if (grade === '4') return { value, label: '야외 자제', color: '#ef4444', badgeBg: 'rgba(239,68,68,0.15)' };
+  return { value, label: '야외 OK', color: '#059669', badgeBg: 'rgba(16,185,129,0.15)' };
+};
+
 // ─── Air quality + weather card ──────────────────────────────────
 const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
   const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
   const [condition, setCondition] = useState<WeatherCondition>('sunny');
-  const [airData, setAirData] = useState<{ value: string; label: string; color: string; badgeBg: string } | null>(null);
+  const [airData, setAirData] = useState<AirDisplay | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백)
   const { nx, ny, station, name: locationName, ready } = useResolvedLocation(refreshKey);
 
+  // 날씨(기상청) — 격자(nx·ny)가 정해지면 곧바로 조회한다.
+  // 대기질(에어코리아)은 서버가 달라 따로 조회한다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
   useEffect(() => {
-    // 위치 해석이 끝난 뒤에 날씨/대기질을 조회한다.
     if (!ready) return;
 
     let cancelled = false;
-    const getPublicData = async () => {
+    (async () => {
       setLoading(true);
       setError(null);
-      try {
-        const [weather, air, sky] = await Promise.all([
-          fetchWeatherData(nx, ny),
-          fetchAirQualityData(station),
-          fetchSkyCode(nx, ny),
-        ]);
-        if (cancelled) return;
+      const [weatherRes, skyRes] = await Promise.allSettled([
+        fetchWeatherData(nx, ny),
+        fetchSkyCode(nx, ny),
+      ]);
+      if (cancelled) return;
 
-        setWeatherItems(weather);
-        setCondition(deriveWeatherCondition(findPty(weather), sky));
-
-        // 에어코리아 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따른 UI 매핑
-        if (air) {
-          // 초미세먼지(PM2.5) 데이터가 통신 장애나 점검으로 인해 '-'로 올 경우 미세먼지(PM10) 데이터로 대체합니다.
-          let displayValue = air.pm25Value;
-          if (!displayValue || displayValue === '-') {
-            displayValue = (air.pm10Value && air.pm10Value !== '-') ? air.pm10Value : '-';
-          }
-
-          const numericVal = parseInt(displayValue, 10);
-          let grade = '2';
-
-          if (!isNaN(numericVal)) {
-            if (numericVal <= 15) {
-              grade = '1';
-            } else if (numericVal <= 35) {
-              grade = '2';
-            } else if (numericVal <= 75) {
-              grade = '3';
-            } else {
-              grade = '4';
-            }
-          } else {
-            // 수치가 숫자가 아닐 시 API에서 온 등급 사용
-            grade = air.pm25Grade || air.khaiGrade || '2';
-          }
-
-          let label = '보통';
-          let color = '#059669'; // 기본 색상 (초록)
-          let badgeBg = 'rgba(16,185,129,0.15)';
-
-          if (grade === '1') { label = '최고'; }
-          else if (grade === '2') { label = '야외 OK'; }
-          else if (grade === '3') { label = '주의'; color = '#f59e0b'; badgeBg = 'rgba(245,158,11,0.15)'; }
-          else if (grade === '4') { label = '야외 자제'; color = '#ef4444'; badgeBg = 'rgba(239,68,68,0.15)'; }
-
-          setAirData({
-            value: displayValue,
-            label,
-            color,
-            badgeBg,
-          });
-        }
-      } catch (error) {
-        if (!cancelled) setError('날씨/대기질 정보를 불러오지 못했습니다.');
-      } finally {
-        if (!cancelled) setLoading(false);
+      if (weatherRes.status === 'fulfilled') {
+        setWeatherItems(weatherRes.value);
+        const sky = skyRes.status === 'fulfilled' ? skyRes.value : undefined;
+        setCondition(deriveWeatherCondition(findPty(weatherRes.value), sky));
+      } else {
+        setError('날씨 정보를 불러오지 못했어요.');
       }
-    };
-    getPublicData();
+      setLoading(false);
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [ready, nx, ny, station]);
+  }, [ready, nx, ny]);
+
+  // 대기질(에어코리아) — 측정소가 정해지면 조회. 실패해도 날씨 표시에는 영향을 주지 않는다.
+  // 서버 혼잡(504)이 잦아, 실패하면 직전 값을 유지한 채 잠시 뒤 한 번 더 시도한다.
+  useEffect(() => {
+    if (!ready) return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const load = () => {
+      fetchAirQualityData(station)
+        .then((air) => {
+          if (!cancelled && air) setAirData(toAirDisplay(air));
+        })
+        .catch(() => {
+          if (!cancelled) retryTimer = setTimeout(load, AIR_RETRY_MS);
+        });
+    };
+    load();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [ready, station]);
 
   // 로딩 중일 때 스켈레톤 UI 또는 ActivityIndicator 표시
   if (loading) {
@@ -219,11 +238,11 @@ const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
   const wind = weatherItems.find((i) => i.category === 'WSD')?.obsrValue ?? '2';
   const sky = conditionLabel(condition);
 
-  // 대기질 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
-  const airValue = airData?.value ?? '32';
-  const airLabel = airData?.label ?? '야외 OK';
-  const airColor = airData?.color ?? '#059669';
-  const airBadgeBg = airData?.badgeBg ?? 'rgba(16,185,129,0.15)';
+  // 대기질 매핑 — 조회 실패(에어코리아 점검·일시 오류) 시 '--' 로 표시한다.
+  const airValue = airData?.value ?? '--';
+  const airLabel = airData?.label ?? '정보 없음';
+  const airColor = airData?.color ?? '#9b8cc5';
+  const airBadgeBg = airData?.badgeBg ?? 'rgba(155,140,197,0.15)';
 
   return (
     <View
