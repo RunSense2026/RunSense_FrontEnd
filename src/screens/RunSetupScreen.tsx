@@ -5,6 +5,8 @@ import Svg, { Path, Circle, Defs, LinearGradient as SvgGradient, Stop, G, Line, 
 
 import { DarkShell, DarkNavHeader } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
+import { useInsoleStore } from '@/stores/insoleStore';
+import { useProfileStore } from '@/stores/profileStore';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -14,6 +16,11 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   const [mode, setMode] = useState<Mode>('dist');
   const [distKm, setDistKm] = useState(5.0);
   const [timeMin, setTimeMin] = useState(28);
+
+  // 미니 카드 값 — 연결 기기는 인솔 연결 상태(+Galaxy Watch), LTHR 은 프로필에 저장된 값.
+  const insoleCount =
+    (useInsoleStore((s) => s.L.connected) ? 1 : 0) + (useInsoleStore((s) => s.R.connected) ? 1 : 0);
+  const lthr = useProfileStore((s) => s.lthr);
 
   const pace = useMemo(() => {
     // 목표 페이스는 거리 모드(거리·시간 목표)에서만 계산된다.
@@ -295,8 +302,13 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
 
         {/* Devices + LTHR mini cards */}
         <View className="flex-row gap-2 mb-3">
-          <MiniInfo label="연결 기기" value="3" sub="모두 정상" tone="ok" />
-          <MiniInfo label="내 LTHR" value="162" sub="bpm" tone="hot" />
+          <MiniInfo
+            label="연결 기기"
+            value={String(insoleCount + 1)}
+            sub={insoleCount === 2 ? '모두 정상' : '인솔 확인 필요'}
+            tone="ok"
+          />
+          <MiniInfo label="내 LTHR" value={lthr || '--'} sub={lthr ? 'bpm' : '미설정'} tone="hot" />
         </View>
 
         {/* Start button — switches color/label by mode */}

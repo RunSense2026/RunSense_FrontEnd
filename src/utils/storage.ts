@@ -8,6 +8,8 @@ const K_ACCESS = 'auth.accessToken';
 const K_REFRESH = 'auth.refreshToken';
 const K_SESSION = 'auth.session';
 const K_REMEMBER = 'auth.remember';
+// 프로필(이름·이메일 + 신체 정보·사진) — 서버에 수정 API 가 없어 기기에만 보관한다.
+const K_PROFILE = 'profile.prefs';
 const PERSIST_KEYS = [K_ACCESS, K_REFRESH, K_SESSION, K_REMEMBER];
 
 const removePersisted = () => {
@@ -85,6 +87,42 @@ export const persistSession = (session: PersistedSession): void => {
   if (_remember) {
     AsyncStorage.setItem(K_SESSION, JSON.stringify(session)).catch(() => {});
   }
+};
+
+// ─── 프로필(신체 정보) ─────────────────────────────────────────────
+
+export interface PersistedProfile {
+  /** 사용자가 직접 고친 이름 (로그인 응답 값보다 우선) */
+  name?: string;
+  /** 사용자가 직접 고친 이메일 (로그인 응답 값보다 우선) */
+  email?: string;
+  age?: string;
+  weight?: string;
+  /** 안정시 심박수 (bpm) */
+  restingHr?: string;
+  /** 젖산 역치 심박수 (bpm) */
+  lthr?: string;
+  avatarUri?: string | null;
+}
+
+/** 프로필 수정 저장 시 호출 — '로그인 유지' 여부와 무관하게 기기에 남긴다. */
+export const persistProfile = (profile: PersistedProfile): void => {
+  AsyncStorage.setItem(K_PROFILE, JSON.stringify(profile)).catch(() => {});
+};
+
+/** 앱 시작 시 저장된 프로필을 읽어온다. (없으면 null) */
+export const loadPersistedProfile = async (): Promise<PersistedProfile | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(K_PROFILE);
+    return raw ? (JSON.parse(raw) as PersistedProfile) : null;
+  } catch {
+    return null;
+  }
+};
+
+/** 로그아웃 시 호출 — 다음 사용자에게 이전 사용자의 프로필이 남지 않게 지운다. */
+export const clearPersistedProfile = (): void => {
+  AsyncStorage.removeItem(K_PROFILE).catch(() => {});
 };
 
 /**

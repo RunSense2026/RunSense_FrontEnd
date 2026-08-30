@@ -17,6 +17,8 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     email: savedEmail,
     age: savedAge,
     weight: savedWeight,
+    restingHr: savedRestingHr,
+    lthr: savedLthr,
     avatarUri: savedAvatar,
     setProfile,
   } = useProfileStore();
@@ -24,6 +26,8 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
   const [email, setEmail] = useState(savedEmail);
   const [age, setAge] = useState(savedAge);
   const [weight, setWeight] = useState(savedWeight);
+  const [restingHr, setRestingHr] = useState(savedRestingHr);
+  const [lthr, setLthr] = useState(savedLthr);
   const [avatarUri, setAvatarUri] = useState(savedAvatar);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -46,7 +50,16 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
   };
 
   const handleSave = () => {
-    setProfile({ name: name.trim(), email: email.trim(), age: age.trim(), weight: weight.trim(), avatarUri });
+    // 신체 정보(나이·체중·안정시 심박·LTHR)와 사진은 스토어에서 기기에 함께 저장된다.
+    setProfile({
+      name: name.trim(),
+      email: email.trim(),
+      age: age.trim(),
+      weight: weight.trim(),
+      restingHr: restingHr.trim(),
+      lthr: lthr.trim(),
+      avatarUri,
+    });
     navigation.goBack();
   };
 
@@ -106,9 +119,20 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
         {/* 신체 정보 */}
         <SectionLabel>신체 정보</SectionLabel>
         <Card>
-          <EditRow label="나이" value={age} onChangeText={setAge} keyboardType="number-pad" unit="세" />
+          <EditRow label="나이" value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="--" unit="세" />
           <Divider />
-          <EditRow label="체중" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" unit="kg" />
+          <EditRow label="체중" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="--" unit="kg" />
+          <Divider />
+          <EditRow
+            label="안정시 심박수"
+            value={restingHr}
+            onChangeText={setRestingHr}
+            keyboardType="number-pad"
+            placeholder="--"
+            unit="bpm"
+          />
+          <Divider />
+          <EditRow label="LTHR" value={lthr} onChangeText={setLthr} keyboardType="number-pad" placeholder="--" unit="bpm" />
         </Card>
 
         {/* Actions */}

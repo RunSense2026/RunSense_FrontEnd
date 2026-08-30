@@ -16,6 +16,7 @@ import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useInsoleStore } from '@/stores/insoleStore';
+import { useMyLthr } from '@/stores/profileStore';
 import { footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
@@ -44,7 +45,9 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
-  const zone = hrZone(hr, 164);
+  // 심박 존은 마이페이지에 저장된 LTHR 기준(미설정 시 기본값).
+  const lthr = useMyLthr();
+  const zone = hrZone(hr, lthr);
 
   // 실시간 발 압력 분포(2페이지) — 인솔 연결 시 실데이터·미연결 시 시뮬레이션.
   const foot = useFootPressure(tick);

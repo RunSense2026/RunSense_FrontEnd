@@ -16,7 +16,19 @@ import { refreshToken } from '@/utils/storage';
 import type { TabScreenProps } from '@/types/navigation';
 
 export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
-  const { name, email, age, weight, avatarUri, joinedAt, runCount, totalDistanceKm, setStats } = useProfileStore();
+  const {
+    name,
+    email,
+    age,
+    weight,
+    restingHr,
+    lthr,
+    avatarUri,
+    joinedAt,
+    runCount,
+    totalDistanceKm,
+    setStats,
+  } = useProfileStore();
   const clearSession = useAuthStore((s) => s.clearSession);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const insoleL = useInsoleStore((s) => s.L);
@@ -72,21 +84,22 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
         </View>
 
         <ProfileCard
-          name={name}
-          email={email}
+          name={name || '게스트'}
+          email={email || '로그인이 필요해요'}
           avatarUri={avatarUri}
           meta={`가입 ${fmtJoinedDate(joinedAt)} · ${runCount ?? '--'}회 러닝 · ${fmtTotalDistance(totalDistanceKm)}km`}
           onEdit={() => navigation.navigate('EditProfile')}
         />
 
+        {/* 신체 정보는 서버에 저장 필드가 없어 프로필 수정에서 입력한 값(기기 저장)을 보여준다. */}
         <SettingsSection icon="👤" title="프로필">
-          <SettingsRow label="나이" value={age} unit="세" />
+          <SettingsRow label="나이" value={orDash(age)} unit={age ? '세' : undefined} />
           <SettingsDivider />
-          <SettingsRow label="체중" value={weight} unit="kg" />
+          <SettingsRow label="체중" value={orDash(weight)} unit={weight ? 'kg' : undefined} />
           <SettingsDivider />
-          <SettingsRow label="안정시 심박수" value="58" unit="bpm" />
+          <SettingsRow label="안정시 심박수" value={orDash(restingHr)} unit={restingHr ? 'bpm' : undefined} />
           <SettingsDivider />
-          <SettingsRow label="LTHR" value="162" unit="bpm" highlight />
+          <SettingsRow label="LTHR" value={orDash(lthr)} unit={lthr ? 'bpm' : undefined} highlight={!!lthr} />
         </SettingsSection>
 
         <SettingsSection icon="⚙" title="일반">
@@ -155,6 +168,9 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
     </LightShell>
   );
 };
+
+// 입력하지 않은 신체 정보는 '--' 로 표시한다.
+const orDash = (v: string): string => (v.trim() ? v.trim() : '--');
 
 // 가입 날짜(ISO/date) → "2024.03". 값이 없으면 "--".
 const fmtJoinedDate = (iso: string | null): string => {

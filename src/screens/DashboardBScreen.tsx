@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { View, Text } from 'react-native';
 
 import { DarkShell, RSCoach, RSButton, EndRunModal, RSVoiceAutoPlay } from '@/components/domain';
-import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
+import { DEFAULT_LTHR, fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useInsoleStore } from '@/stores/insoleStore';
+import { useMyLthr } from '@/stores/profileStore';
 import { footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
@@ -21,6 +22,8 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
   const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
   const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
   const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
+  // 심박 존 막대는 마이페이지에 저장된 LTHR 기준(미설정 시 기본값).
+  const lthr = useMyLthr() ?? DEFAULT_LTHR;
 
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
   // 양발 센서 데이터는 필수라, 직전 60초 구간 평균(미연결 시 중립값)을 함께 보낸다.
@@ -72,7 +75,7 @@ export const DashboardBScreen = ({ navigation }: ScreenProps<'DashboardB'>) => {
 
       {/* HR row */}
       <View className="px-[22px] pt-3">
-        <HRZoneBar hr={hr} lthr={164} />
+        <HRZoneBar hr={hr} lthr={lthr} />
       </View>
 
       <View className="flex-1" />

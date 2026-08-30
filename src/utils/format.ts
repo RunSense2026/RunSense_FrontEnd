@@ -8,7 +8,10 @@ export type HRZone = {
   color: string;
 };
 
-export const hrZone = (bpm: number, lthr = 164): HRZone => {
+/** LTHR 미설정 시 쓰는 기본 역치 심박수(bpm). 사용자가 프로필에 입력하면 그 값이 우선한다. */
+export const DEFAULT_LTHR = 164;
+
+export const hrZone = (bpm: number, lthr = DEFAULT_LTHR): HRZone => {
   const p = bpm / lthr;
   if (p < 0.81) return { z: 1, label: 'Z1 회복', color: colors.zone.z1 };
   if (p < 0.89) return { z: 2, label: 'Z2 유산소', color: colors.zone.z2 };
