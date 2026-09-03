@@ -5,6 +5,7 @@ import {
   setTokens,
   clearTokens,
   clearPersistedProfile,
+  clearPersistedAirQuality,
   persistSession,
   type PersistedSession,
 } from '@/utils/storage';
@@ -72,8 +73,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   clearSession: () => {
     clearTokens();
-    // 다음 사용자에게 이전 사용자의 프로필/신체 정보가 남지 않게 함께 비운다.
+    // 다음 사용자에게 이전 사용자의 프로필/신체 정보·마지막 위치가 남지 않게 함께 비운다.
     clearPersistedProfile();
+    clearPersistedAirQuality();
     useProfileStore.getState().reset();
     set({ userId: null, userName: null, email: null, isAuthenticated: false });
   },

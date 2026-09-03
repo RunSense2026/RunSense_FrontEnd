@@ -22,6 +22,14 @@ const PUBLIC_RETRIES = 2;
 /** 재시도 간격(ms) — attempt 번째 실패 후 대기 시간 */
 const RETRY_BACKOFF_MS = [800, 1600, 3200, 5000];
 
+/**
+ * 대기질 전용 재시도 간격.
+ * 에어코리아가 혼잡할 때는 실패 응답 자체가 5~10초 걸리고 그 구간이 수십 초 이어진다.
+ * 짧은 간격으로 몰아치면 같은 혼잡 구간을 두드릴 뿐이라 간격을 넉넉히 벌린다.
+ * (그래도 실패하면 호출부가 20초 주기로 다시 시도한다 — useAirQuality)
+ */
+const AIR_BACKOFF_MS = [2000, 6000];
+
 /** 재시도할 만한 일시적 오류인지 — 네트워크 끊김/타임아웃/5xx(500·502·504) */
 const isRetryable = (e: unknown): boolean => {
   if (!axios.isAxiosError(e)) return false;
@@ -36,7 +44,7 @@ const getPublic = async <T>(
   path: string,
   lat: number,
   lon: number,
-  { retries = PUBLIC_RETRIES, timeout = PUBLIC_TIMEOUT_MS } = {},
+  { retries = PUBLIC_RETRIES, timeout = PUBLIC_TIMEOUT_MS, backoff = RETRY_BACKOFF_MS } = {},
 ): Promise<T> => {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -46,7 +54,7 @@ const getPublic = async <T>(
     } catch (e) {
       lastError = e;
       if (attempt === retries || !isRetryable(e)) break;
-      await delay(RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)]);
+      await delay(backoff[Math.min(attempt, backoff.length - 1)]);
     }
   }
   if (__DEV__) {
@@ -85,14 +93,19 @@ export const reverseGeocode = async (
 /**
  * 대기질 조회 — GET /api/public/air-quality
  * 좌표 기준 최근접 측정소의 실시간 측정정보(PM10·PM2.5·통합지수)를 준다.
- * 에어코리아가 유독 자주 혼잡하므로 재시도를 넉넉히 준다. (날씨 표시를 막지 않는 백그라운드 조회)
+ *
+ * 에어코리아는 혼잡할 때 `SERVICETIMEOUT_ERROR`(504) 를 자주 돌려주고(실측 실패율 50% 안팎),
+ * 이 엔드포인트는 측정소 조회 + 측정값 조회로 그 API 를 두 번 타서 체감 실패율이 더 높다.
+ * 백엔드는 그 실패를 502 로 전달한다. 여기서 몇 번 더 시도해 보되, 오래 물고 있지는 않는다 —
+ * 최종 실패해도 호출부(useAirQuality)가 직전 값을 유지한 채 20초 주기로 다시 시도한다.
  */
 export const fetchAirQuality = async (
   lat: number,
   lon: number,
 ): Promise<AirQualityResponseDto | null> => {
   const data = await getPublic<AirQualityResponseDto>('/api/public/air-quality', lat, lon, {
-    retries: 3,
+    retries: 2,
+    backoff: AIR_BACKOFF_MS,
   });
   return data ?? null;
 };
