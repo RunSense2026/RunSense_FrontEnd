@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, type DimensionValue } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 
-import { LightShell, WeatherIcon, deriveWeatherCondition, findPty, type WeatherCondition } from '@/components/domain';
-import { fetchWeatherData, fetchAirQualityData, fetchSkyCode } from '@/api';
+import { LightShell, WeatherIcon, deriveWeatherCondition } from '@/components/domain';
 import { useResolvedLocation, type ResolvedLocation } from '@/hooks/useResolvedLocation';
+import { useWeather, useAirQuality } from '@/hooks/useWeatherAir';
 import { gradients } from '@/theme/tokens';
 
-import type { AirQualityItem, WeatherItem } from '@/types/publicApi';
+import type { AirQualityResponseDto } from '@/types/api';
 import type { TabScreenProps } from '@/types/navigation';
 
 type CourseSort = 'score' | 'name';
@@ -24,7 +24,7 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [courseSort, setCourseSort] = useState<CourseSort>('score');
 
-  // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백). 새로고침 시 재조회.
+  // GPS → 위경도 + 표시 지역명 (실패 시 강남구 폴백). 새로고침 시 재조회.
   const location = useResolvedLocation(refreshKey);
 
   const maxScore = Math.max(...COURSES.map((c) => c.score));
@@ -142,9 +142,6 @@ const CourseSortDropdown = ({
   );
 };
 
-/** 대기질 조회 실패 시 다시 시도하기까지의 간격(ms) */
-const AIR_RETRY_MS = 20000;
-
 /** 대기질 카드 표시값 */
 interface AirDisplay {
   value: string;
@@ -152,23 +149,20 @@ interface AirDisplay {
   grade: string;
 }
 
-// 에어코리아 응답 → 카드 표시값(수치·등급 라벨).
-const toAirDisplay = (air: AirQualityItem): AirDisplay => {
-  // 초미세먼지(PM2.5)가 통신 장애·점검으로 '-' 로 올 경우 미세먼지(PM10) 값으로 대체한다.
-  let value = air.pm25Value;
-  if (!value || value === '-') {
-    value = air.pm10Value && air.pm10Value !== '-' ? air.pm10Value : '-';
-  }
+// 대기질 응답 → 카드 표시값(수치·등급 라벨).
+const toAirDisplay = (air: AirQualityResponseDto): AirDisplay => {
+  // 초미세먼지(PM2.5)가 통신 장애·점검으로 비어 올 경우 미세먼지(PM10) 값으로 대체한다.
+  const numeric = air.pm25Value ?? air.pm10Value ?? null;
+  const value = numeric === null ? '-' : String(Math.round(numeric));
 
-  const numeric = parseInt(value, 10);
   let grade: string;
-  if (!isNaN(numeric)) {
+  if (numeric !== null) {
     if (numeric <= 15) grade = '1';
     else if (numeric <= 35) grade = '2';
     else if (numeric <= 75) grade = '3';
     else grade = '4';
   } else {
-    // 수치가 숫자가 아닐 때는 API 가 준 등급을 쓴다.
+    // 수치가 없을 때는 API 가 준 등급을 쓴다.
     grade = air.pm25Grade || air.khaiGrade || '2';
   }
 
@@ -178,68 +172,17 @@ const toAirDisplay = (air: AirQualityItem): AirDisplay => {
 };
 
 const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
-  const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
-  const [condition, setCondition] = useState<WeatherCondition>('sunny');
-  const [airData, setAirData] = useState<AirDisplay | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { name: locationName } = location;
 
-  const { nx, ny, station, name: locationName, ready } = location;
+  // 날씨와 대기질은 백엔드에서 각각 따로 받아온다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
+  const { weather, loading, error } = useWeather(location);
+  const air = useAirQuality(location);
+  const airData = air ? toAirDisplay(air) : null;
 
-  // 날씨(기상청) — 격자(nx·ny)가 정해지면 곧바로 조회한다.
-  // 대기질(에어코리아)은 서버가 달라 따로 조회한다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [weatherRes, skyRes] = await Promise.allSettled([
-        fetchWeatherData(nx, ny),
-        fetchSkyCode(nx, ny),
-      ]);
-      if (cancelled) return;
-
-      if (weatherRes.status === 'fulfilled') {
-        setWeatherItems(weatherRes.value);
-        const sky = skyRes.status === 'fulfilled' ? skyRes.value : undefined;
-        setCondition(deriveWeatherCondition(findPty(weatherRes.value), sky));
-      } else {
-        setError('날씨 정보를 불러오지 못했어요.');
-      }
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, nx, ny]);
-
-  // 대기질(에어코리아) — 측정소가 정해지면 조회. 실패해도 날씨 표시에는 영향을 주지 않는다.
-  // 서버 혼잡(504)이 잦아, 실패하면 직전 값을 유지한 채 잠시 뒤 한 번 더 시도한다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const load = () => {
-      fetchAirQualityData(station)
-        .then((air) => {
-          if (!cancelled && air) setAirData(toAirDisplay(air));
-        })
-        .catch(() => {
-          if (!cancelled) retryTimer = setTimeout(load, AIR_RETRY_MS);
-        });
-    };
-    load();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [ready, station]);
+  const condition = deriveWeatherCondition(
+    weather?.precipitationType ?? undefined,
+    weather?.skyCondition ?? undefined,
+  );
 
   if (loading) {
     return (
@@ -258,8 +201,8 @@ const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
     );
   }
 
-  const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
-  const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '48';
+  const temp = weather?.temperature ?? 18;
+  const humidity = weather?.humidity ?? 48;
 
   // 대기질 조회 실패(에어코리아 점검·일시 오류) 시 '--' 로 표시한다.
   const airValue = airData?.value ?? '--';

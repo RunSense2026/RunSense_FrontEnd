@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 
-import { fetchWeatherData, fetchAirQualityData, fetchSkyCode, readAllRuns, readRunsByDate } from '@/api';
-import { WeatherIcon, deriveWeatherCondition, findPty, conditionLabel, type WeatherCondition } from '@/components/domain';
+import { readAllRuns, readRunsByDate } from '@/api';
+import { WeatherIcon, deriveWeatherCondition, conditionLabel } from '@/components/domain';
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
+import { useWeather, useAirQuality } from '@/hooks/useWeatherAir';
 import { useAuthStore } from '@/stores/authStore';
 import { useWeeklyGoalStore } from '@/stores/weeklyGoalStore';
-import type { AirQualityItem, WeatherItem } from '@/types/publicApi';
-import type { RunningActivityResponseDto } from '@/types/api';
+import type { AirQualityResponseDto, RunningActivityResponseDto } from '@/types/api';
 import type { HomeScreenProps } from '@/types/navigation';
 
 // ═════════════════════════════════════════════════════════════
@@ -110,9 +110,6 @@ export const HomeScreen = ({ navigation }: HomeScreenProps) => {
   );
 };
 
-/** 대기질 조회 실패 시 다시 시도하기까지의 간격(ms) */
-const AIR_RETRY_MS = 20000;
-
 /** 대기질 카드 표시값 */
 interface AirDisplay {
   value: string;
@@ -121,23 +118,20 @@ interface AirDisplay {
   badgeBg: string;
 }
 
-// 에어코리아 응답 → 카드 표시값. 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따라 색·문구를 정한다.
-const toAirDisplay = (air: AirQualityItem): AirDisplay => {
-  // 초미세먼지(PM2.5)가 통신 장애·점검으로 '-' 로 올 경우 미세먼지(PM10) 값으로 대체한다.
-  let value = air.pm25Value;
-  if (!value || value === '-') {
-    value = air.pm10Value && air.pm10Value !== '-' ? air.pm10Value : '-';
-  }
+// 대기질 응답 → 카드 표시값. 등급(1:좋음, 2:보통, 3:나쁨, 4:매우나쁨)에 따라 색·문구를 정한다.
+const toAirDisplay = (air: AirQualityResponseDto): AirDisplay => {
+  // 초미세먼지(PM2.5)가 통신 장애·점검으로 비어 올 경우 미세먼지(PM10) 값으로 대체한다.
+  const numeric = air.pm25Value ?? air.pm10Value ?? null;
+  const value = numeric === null ? '-' : String(Math.round(numeric));
 
-  const numeric = parseInt(value, 10);
   let grade: string;
-  if (!isNaN(numeric)) {
+  if (numeric !== null) {
     if (numeric <= 15) grade = '1';
     else if (numeric <= 35) grade = '2';
     else if (numeric <= 75) grade = '3';
     else grade = '4';
   } else {
-    // 수치가 숫자가 아닐 때는 API 가 준 등급을 쓴다.
+    // 수치가 없을 때는 API 가 준 등급을 쓴다.
     grade = air.pm25Grade || air.khaiGrade || '2';
   }
 
@@ -149,69 +143,19 @@ const toAirDisplay = (air: AirQualityItem): AirDisplay => {
 
 // ─── Air quality + weather card ──────────────────────────────────
 const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
-  const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
-  const [condition, setCondition] = useState<WeatherCondition>('sunny');
-  const [airData, setAirData] = useState<AirDisplay | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // GPS → 위경도 + 표시 지역명 (실패 시 강남구 폴백)
+  const location = useResolvedLocation(refreshKey);
+  const { name: locationName } = location;
 
-  // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백)
-  const { nx, ny, station, name: locationName, ready } = useResolvedLocation(refreshKey);
+  // 날씨와 대기질은 백엔드에서 각각 따로 받아온다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
+  const { weather, loading, error } = useWeather(location);
+  const air = useAirQuality(location);
+  const airData = air ? toAirDisplay(air) : null;
 
-  // 날씨(기상청) — 격자(nx·ny)가 정해지면 곧바로 조회한다.
-  // 대기질(에어코리아)은 서버가 달라 따로 조회한다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [weatherRes, skyRes] = await Promise.allSettled([
-        fetchWeatherData(nx, ny),
-        fetchSkyCode(nx, ny),
-      ]);
-      if (cancelled) return;
-
-      if (weatherRes.status === 'fulfilled') {
-        setWeatherItems(weatherRes.value);
-        const sky = skyRes.status === 'fulfilled' ? skyRes.value : undefined;
-        setCondition(deriveWeatherCondition(findPty(weatherRes.value), sky));
-      } else {
-        setError('날씨 정보를 불러오지 못했어요.');
-      }
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, nx, ny]);
-
-  // 대기질(에어코리아) — 측정소가 정해지면 조회. 실패해도 날씨 표시에는 영향을 주지 않는다.
-  // 서버 혼잡(504)이 잦아, 실패하면 직전 값을 유지한 채 잠시 뒤 한 번 더 시도한다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const load = () => {
-      fetchAirQualityData(station)
-        .then((air) => {
-          if (!cancelled && air) setAirData(toAirDisplay(air));
-        })
-        .catch(() => {
-          if (!cancelled) retryTimer = setTimeout(load, AIR_RETRY_MS);
-        });
-    };
-    load();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [ready, station]);
+  const condition = deriveWeatherCondition(
+    weather?.precipitationType ?? undefined,
+    weather?.skyCondition ?? undefined,
+  );
 
   // 로딩 중일 때 스켈레톤 UI 또는 ActivityIndicator 표시
   if (loading) {
@@ -232,10 +176,10 @@ const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
     );
   }
 
-  // 기온(T1H), 습도(REH), 풍속(WSD) 카테고리 매핑 (데이터가 없을 시 기존 하드코딩 값 유지)
-  const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
-  const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '45';
-  const wind = weatherItems.find((i) => i.category === 'WSD')?.obsrValue ?? '2';
+  // 기온·습도·풍속 (값이 없을 시 기존 하드코딩 값 유지)
+  const temp = weather?.temperature ?? 18;
+  const humidity = weather?.humidity ?? 45;
+  const wind = weather?.windSpeed ?? 2;
   const sky = conditionLabel(condition);
 
   // 대기질 매핑 — 조회 실패(에어코리아 점검·일시 오류) 시 '--' 로 표시한다.

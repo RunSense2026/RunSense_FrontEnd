@@ -235,3 +235,49 @@ export interface RunningActivityDetailResponseDto {
   footSensorData: FootSensorDataResponseDto[];
   aiCoachings: AiCoachingResponseDto[];
 }
+
+// ─── Public (날씨 · 위치 · 대기질) ────────────────────────────────
+// 공공데이터(기상청·에어코리아)와 역지오코딩은 백엔드가 대신 호출한다.
+// 프론트는 위경도만 넘기고, 격자 변환·측정소 탐색·서비스 키는 서버가 처리한다.
+
+/** 날씨 조회 응답 — GET /api/public/weather?lat=&lon= */
+export interface WeatherResponseDto {
+  /** 기온(°C) */
+  temperature: number | null;
+  /** 습도(%) */
+  humidity: number | null;
+  /** 풍속(m/s) */
+  windSpeed: number | null;
+  /** 강수형태 코드 (0:없음, 1/5:비, 2/6:비/눈, 3/7:눈) */
+  precipitationType: string | null;
+  /** 하늘상태 코드 (1:맑음, 3:구름많음, 4:흐림) — 조회 실패 시 null */
+  skyCondition: string | null;
+}
+
+/** 위치 역지오코딩 응답 — GET /api/public/location?lat=&lon= */
+export interface LocationResponseDto {
+  /** 화면 표시용 지역명 (예: "서울 · 강남구") */
+  name: string | null;
+  /** 자치구/시군구명 (예: "강남구") */
+  gu: string | null;
+}
+
+/** 대기질 조회 응답 — GET /api/public/air-quality?lat=&lon= */
+export interface AirQualityResponseDto {
+  /** 측정소명 (좌표 기준 최근접 측정소) */
+  stationName: string | null;
+  /** 측정시각 (예: "2026-07-19 04:00") */
+  dataTime: string | null;
+  /** 미세먼지 PM10 농도(㎍/㎥) */
+  pm10Value: number | null;
+  /** 초미세먼지 PM2.5 농도(㎍/㎥) */
+  pm25Value: number | null;
+  /** 통합대기환경지수 */
+  khaiValue: number | null;
+  /** PM10 등급 (1:좋음, 2:보통, 3:나쁨, 4:매우나쁨) */
+  pm10Grade: string | null;
+  /** PM2.5 등급 (1:좋음, 2:보통, 3:나쁨, 4:매우나쁨) */
+  pm25Grade: string | null;
+  /** 통합대기환경 등급 (1:좋음, 2:보통, 3:나쁨, 4:매우나쁨) */
+  khaiGrade: string | null;
+}

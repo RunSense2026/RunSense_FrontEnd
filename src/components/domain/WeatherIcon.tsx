@@ -1,5 +1,4 @@
 import Svg, { Circle, Rect, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
-import type { WeatherItem } from '@/types/publicApi';
 
 // 날씨 상태 — 홈/코스 카드의 날씨 아이콘을 결정한다.
 export type WeatherCondition = 'sunny' | 'cloudy' | 'rainy' | 'snowy' | 'sleet';
@@ -25,12 +24,6 @@ export const deriveWeatherCondition = (pty?: string, sky?: string): WeatherCondi
   }
   if (sky === '3' || sky === '4') return 'cloudy';
   return 'sunny';
-};
-
-/** 기상청 응답 배열에서 PTY 값을 뽑는다(실황 obsrValue / 예보 fcstValue 모두 대응). */
-export const findPty = (items: WeatherItem[]): string | undefined => {
-  const it = items.find((i) => i.category === 'PTY');
-  return it?.obsrValue ?? it?.fcstValue;
 };
 
 /** 날씨 상태 → 한글 라벨 (온도 옆 등 텍스트 표기용). */
