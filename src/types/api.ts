@@ -1,10 +1,10 @@
 // RunSense 백엔드 API 타입 정의
 // 출처: 백엔드 OpenAPI 3.1 스펙 (서버 주소는 .env 의 API_BASE_URL)
-// 모든 응답은 { status, message, data } 공통 래퍼로 감싸진다.
+// 모든 응답은 { success, message, data } 공통 래퍼로 감싸진다.
 
 /** 모든 API 응답의 공통 래퍼 */
 export interface ApiResponse<T> {
-  status: number;
+  success: boolean;
   message: string;
   data: T;
 }
@@ -56,6 +56,43 @@ export interface UserLoginResponseDto {
   refreshToken: string;
   /** 액세스 토큰 만료 시간 (초) */
   expiresIn: number;
+}
+
+/** 성별 — 서버 저장값 (M: 남성, F: 여성, ETC: 기타) */
+export type Gender = 'M' | 'F' | 'ETC';
+
+/**
+ * 유저 정보 수정 요청 — PATCH /api/users
+ * 보내지 않은(= null) 필드는 서버에서 수정하지 않는다. 즉 값을 비우는(지우는) 건 불가능하다.
+ */
+export interface UserUpdateRequestDto {
+  /** 사용자 이름 (2~5자) */
+  userName?: string;
+  /** 생년월일 (YYYY-MM-DD) */
+  birthDate?: string;
+  /** 성별 */
+  gender?: Gender;
+  /** 키 (cm) */
+  height?: number;
+  /** 체중 (kg) */
+  weight?: number;
+}
+
+/** 유저 정보 응답 — PATCH /api/users (수정 후 전체 프로필) */
+export interface UserResponseDto {
+  userId: number;
+  userName: string;
+  email: string;
+  /** 생년월일 (date) — 미입력이면 null */
+  birthDate: string | null;
+  gender: Gender | null;
+  /** 키 (cm) */
+  height: number | null;
+  /** 체중 (kg) */
+  weight: number | null;
+  isVerified: boolean;
+  /** 가입일 (date) */
+  createdAt: string;
 }
 
 /** 이메일 중복 체크 응답 — GET /api/users/email-duplicate */

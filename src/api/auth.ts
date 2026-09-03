@@ -6,9 +6,11 @@ import type {
   TokenReissueRequestDto,
   UserLoginRequestDto,
   UserLoginResponseDto,
+  UserResponseDto,
   UserSignUpRequestDto,
   UserSignUpResponseDto,
   UserTokenResponseDto,
+  UserUpdateRequestDto,
 } from '@/types/api';
 
 /** 회원가입 — POST /api/users/signup */
@@ -52,6 +54,24 @@ export const reissue = async (
   );
   return res.data.data;
 };
+
+/**
+ * 내 프로필 수정 — PATCH /api/users
+ * 보내지 않은 필드는 서버가 그대로 두고, 응답으로 수정 후 전체 프로필을 돌려준다.
+ */
+export const updateMyProfile = async (
+  body: UserUpdateRequestDto,
+): Promise<UserResponseDto> => {
+  const res = await apiClient.patch<ApiResponse<UserResponseDto>>('/api/users', body);
+  return res.data.data;
+};
+
+/**
+ * 내 프로필 조회.
+ * 백엔드에 조회 전용 엔드포인트가 없어, 수정 API 에 빈 본문(= 아무 필드도 수정하지 않음)을 보내
+ * 응답으로 오는 현재 프로필을 읽는다. GET /api/users 가 생기면 이 함수만 바꾸면 된다.
+ */
+export const readMyProfile = (): Promise<UserResponseDto> => updateMyProfile({});
 
 /** 로그아웃 — POST /api/users/logout */
 export const logout = async (body: TokenLogoutRequestDto): Promise<void> => {

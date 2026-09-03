@@ -4,11 +4,14 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import type { Gender } from '@/types/api';
+
 const K_ACCESS = 'auth.accessToken';
 const K_REFRESH = 'auth.refreshToken';
 const K_SESSION = 'auth.session';
 const K_REMEMBER = 'auth.remember';
-// 프로필(이름·이메일 + 신체 정보·사진) — 서버에 수정 API 가 없어 기기에만 보관한다.
+// 프로필 — 서버 값(이름·생년월일·성별·키·체중)의 오프라인 캐시 +
+// 서버에 저장 필드가 없는 값(안정시 심박수·LTHR·사진)의 유일한 보관처.
 const K_PROFILE = 'profile.prefs';
 const PERSIST_KEYS = [K_ACCESS, K_REFRESH, K_SESSION, K_REMEMBER];
 
@@ -92,12 +95,18 @@ export const persistSession = (session: PersistedSession): void => {
 // ─── 프로필(신체 정보) ─────────────────────────────────────────────
 
 export interface PersistedProfile {
-  /** 사용자가 직접 고친 이름 (로그인 응답 값보다 우선) */
+  // 서버(PATCH /api/users) 값의 캐시 — 부팅 직후·오프라인 표시용이고, 서버 응답이 오면 덮어쓴다.
   name?: string;
-  /** 사용자가 직접 고친 이메일 (로그인 응답 값보다 우선) */
-  email?: string;
-  age?: string;
+  /** 생년월일 (YYYY-MM-DD) */
+  birthDate?: string;
+  /** 성별 코드 (M/F/ETC), 미설정이면 '' */
+  gender?: Gender | '';
+  /** 키 (cm) */
+  height?: string;
+  /** 체중 (kg) */
   weight?: string;
+
+  // 서버에 저장 필드가 없는 값 — 기기에만 남는다.
   /** 안정시 심박수 (bpm) */
   restingHr?: string;
   /** 젖산 역치 심박수 (bpm) */

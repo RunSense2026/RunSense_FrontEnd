@@ -1,35 +1,59 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Modal, type TextInputProps } from 'react-native';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  type TextInputProps,
+} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import { isAxiosError } from 'axios';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { launchCamera, launchImageLibrary, type ImagePickerResponse } from 'react-native-image-picker';
 import type { ReactNode } from 'react';
 
 import { LightShell, ProfileAvatar } from '@/components/domain';
+import { updateMyProfile } from '@/api';
 import { gradients } from '@/theme/tokens';
 import { useProfileStore } from '@/stores/profileStore';
+import {
+  GENDER_OPTIONS,
+  fieldToNumber,
+  isValidBirthDate,
+  maskBirthDate,
+} from '@/utils/profile';
 
+import type { Gender, UserUpdateRequestDto } from '@/types/api';
 import type { ScreenProps } from '@/types/navigation';
 
 export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) => {
   const {
     name: savedName,
-    email: savedEmail,
-    age: savedAge,
+    email,
+    birthDate: savedBirthDate,
+    gender: savedGender,
+    height: savedHeight,
     weight: savedWeight,
     restingHr: savedRestingHr,
     lthr: savedLthr,
     avatarUri: savedAvatar,
     setProfile,
+    applyServerProfile,
   } = useProfileStore();
   const [name, setName] = useState(savedName);
-  const [email, setEmail] = useState(savedEmail);
-  const [age, setAge] = useState(savedAge);
+  const [birthDate, setBirthDate] = useState(savedBirthDate);
+  const [gender, setGender] = useState<Gender | ''>(savedGender);
+  const [height, setHeight] = useState(savedHeight);
   const [weight, setWeight] = useState(savedWeight);
   const [restingHr, setRestingHr] = useState(savedRestingHr);
   const [lthr, setLthr] = useState(savedLthr);
   const [avatarUri, setAvatarUri] = useState(savedAvatar);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const applyPickResult = (result: ImagePickerResponse) => {
     if (result.didCancel || result.errorCode) return;
@@ -49,18 +73,61 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     }, 250);
   };
 
-  const handleSave = () => {
-    // 신체 정보(나이·체중·안정시 심박·LTHR)와 사진은 스토어에서 기기에 함께 저장된다.
+  const handleSave = async () => {
+    if (saving) return;
+
+    const trimmedName = name.trim();
+    const trimmedBirthDate = birthDate.trim();
+    const heightValue = fieldToNumber(height);
+    const weightValue = fieldToNumber(weight);
+
+    // 서버 제약(이름 2~5자, 생년월일 date, 키·체중 양수)을 보내기 전에 확인한다.
+    if (trimmedName.length < 2 || trimmedName.length > 5) {
+      setError('이름은 2~5자로 입력해주세요.');
+      return;
+    }
+    if (trimmedBirthDate && !isValidBirthDate(trimmedBirthDate)) {
+      setError('생년월일을 YYYY-MM-DD 형식으로 정확히 입력해주세요.');
+      return;
+    }
+    if (heightValue === null) {
+      setError('키는 0보다 큰 숫자로 입력해주세요.');
+      return;
+    }
+    if (weightValue === null) {
+      setError('체중은 0보다 큰 숫자로 입력해주세요.');
+      return;
+    }
+
+    setError(null);
+    setSaving(true);
+
+    // 안정시 심박수·LTHR·사진은 서버에 저장 필드가 없어 기기에만 남긴다.
     setProfile({
-      name: name.trim(),
-      email: email.trim(),
-      age: age.trim(),
-      weight: weight.trim(),
       restingHr: restingHr.trim(),
       lthr: lthr.trim(),
       avatarUri,
     });
-    navigation.goBack();
+
+    // 비워 둔 값은 보내지 않는다 — 서버가 null 필드를 '수정 안 함'으로 처리하므로 지울 수는 없다.
+    const patch: UserUpdateRequestDto = { userName: trimmedName };
+    if (trimmedBirthDate) patch.birthDate = trimmedBirthDate;
+    if (gender) patch.gender = gender;
+    if (heightValue !== undefined) patch.height = heightValue;
+    if (weightValue !== undefined) patch.weight = weightValue;
+
+    try {
+      const updated = await updateMyProfile(patch);
+      applyServerProfile(updated);
+      navigation.goBack();
+    } catch (e) {
+      setError(
+        (isAxiosError(e) ? e.response?.data?.message : null) ??
+          '프로필 저장에 실패했어요. 잠시 후 다시 시도해주세요.',
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -104,22 +171,27 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
         {/* 기본 정보 */}
         <SectionLabel>기본 정보</SectionLabel>
         <Card>
-          <EditRow label="이름" value={name} onChangeText={setName} placeholder="이름" />
+          <EditRow label="이름" value={name} onChangeText={setName} placeholder="이름 (2~5자)" maxLength={5} />
           <Divider />
-          <EditRow
-            label="이메일"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@email.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
+          {/* 이메일은 로그인 계정 식별자 — 서버에 수정 API 가 없어 읽기 전용으로 보여준다. */}
+          <ReadOnlyRow label="이메일" value={email || '--'} note="로그인 계정" />
         </Card>
 
         {/* 신체 정보 */}
         <SectionLabel>신체 정보</SectionLabel>
         <Card>
-          <EditRow label="나이" value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="--" unit="세" />
+          <EditRow
+            label="생년월일"
+            value={birthDate}
+            onChangeText={(t) => setBirthDate(maskBirthDate(t))}
+            keyboardType="number-pad"
+            placeholder="YYYY-MM-DD"
+            maxLength={10}
+          />
+          <Divider />
+          <GenderRow value={gender} onChange={setGender} />
+          <Divider />
+          <EditRow label="키" value={height} onChangeText={setHeight} keyboardType="decimal-pad" placeholder="--" unit="cm" />
           <Divider />
           <EditRow label="체중" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="--" unit="kg" />
           <Divider />
@@ -136,14 +208,28 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
         </Card>
 
         {/* Actions */}
-        <Pressable onPress={handleSave} className="mt-5">
+        {error && (
+          <Text className="text-[12px] font-semibold text-center mt-1" style={{ color: '#dc2626' }}>
+            {error}
+          </Text>
+        )}
+        <Pressable onPress={handleSave} disabled={saving} className="mt-5">
           <LinearGradient
             colors={gradients.action}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={{ paddingVertical: 15, borderRadius: 16, alignItems: 'center' }}
+            style={{
+              paddingVertical: 15,
+              borderRadius: 16,
+              alignItems: 'center',
+              opacity: saving ? 0.6 : 1,
+            }}
           >
-            <Text className="text-white text-[15px] font-bold">저장하기</Text>
+            {saving ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text className="text-white text-[15px] font-bold">저장하기</Text>
+            )}
           </LinearGradient>
         </Pressable>
         <Pressable onPress={() => navigation.goBack()} className="mt-3 items-center py-2">
@@ -285,7 +371,50 @@ const Card = ({ children }: { children: ReactNode }) => (
 
 const Divider = () => <View className="h-px mx-[14px]" style={{ backgroundColor: 'rgba(124,58,237,0.1)' }} />;
 
-interface EditRowProps extends Pick<TextInputProps, 'keyboardType' | 'autoCapitalize' | 'placeholder'> {
+// 수정할 수 없는 값(이메일 등)을 같은 줄 모양으로 보여준다.
+const ReadOnlyRow = ({ label, value, note }: { label: string; value: string; note?: string }) => (
+  <View className="flex-row items-center gap-3 px-[14px] py-[12px]">
+    <Text className="text-[13px] font-medium" style={{ color: '#7c6bb5' }}>{label}</Text>
+    <Text className="flex-1 text-[14px] font-bold text-right" style={{ color: '#9b8cc5' }} numberOfLines={1}>
+      {value}
+    </Text>
+    {note && <Text className="text-[11px] font-medium" style={{ color: '#c4b5fd' }}>{note}</Text>}
+  </View>
+);
+
+// 성별 — 서버가 M/F/ETC 코드만 받으므로 자유 입력 대신 선택형으로 둔다.
+const GenderRow = ({ value, onChange }: { value: Gender | ''; onChange: (g: Gender) => void }) => (
+  <View className="flex-row items-center gap-3 px-[14px] py-[10px]">
+    <Text className="text-[13px] font-medium" style={{ color: '#7c6bb5' }}>성별</Text>
+    <View className="flex-1 flex-row justify-end gap-[6px]">
+      {GENDER_OPTIONS.map((option) => {
+        const selected = value === option.value;
+        return (
+          <Pressable
+            key={option.value}
+            onPress={() => onChange(option.value)}
+            className="px-[14px] py-[7px] rounded-[10px]"
+            style={{
+              backgroundColor: selected ? 'rgba(124,58,237,0.12)' : 'transparent',
+              borderWidth: 0.5,
+              borderColor: selected ? '#7c3aed' : 'rgba(124,58,237,0.2)',
+            }}
+          >
+            <Text
+              className="text-[13px] font-bold"
+              style={{ color: selected ? '#7c3aed' : '#9b8cc5' }}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  </View>
+);
+
+interface EditRowProps
+  extends Pick<TextInputProps, 'keyboardType' | 'autoCapitalize' | 'placeholder' | 'maxLength'> {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
