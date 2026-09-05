@@ -9,5 +9,8 @@ export {
   updateCoaching,
   deleteCoaching,
   resolveVoiceUrl,
+  analyzeLthr,
+  createLthrCoaching,
 } from './ai';
 export * from './public';
+

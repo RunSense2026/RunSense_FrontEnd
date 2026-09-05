@@ -92,6 +92,65 @@ export interface AiCoachingReportDto {
   items: AiCoachingReportItem[];
 }
 
+// ─── LTHR 테스트 관련 DTO ─────────────────────────────────────────
+
+/** LTHR 측정 심박수 샘플 */
+export interface LthrHeartRateSampleDto {
+  /** 경과 시간 (초, 0~1800) */
+  elapsedSeconds: number;
+  /** 심박수 (BPM, 30~250) */
+  heartRate: number;
+}
+
+/** LTHR 분석 요청 DTO — POST /lthr/analyze */
+export interface LthrAnalyzeRequestDto {
+  /** 30분 동안 수집한 심박수 샘플 목록 (최소 2개) */
+  heartRateSamples: LthrHeartRateSampleDto[];
+  /** 이전 LTHR 값 (최초 측정이면 null 또는 undefined) */
+  previousLthr?: number | null;
+}
+
+/** LTHR 기반 트레이닝 존 결과 DTO */
+export interface LthrZoneResultDto {
+  /** 존 식별자 (예: "Z1", "Z2", ...) */
+  zone: string;
+  /** 존 명칭 (예: "회복", "유산소", ...) */
+  name: string;
+  /** 최소 심박수 (null 가능) */
+  minBpm: number | null;
+  /** 최대 심박수 (null 가능) */
+  maxBpm: number | null;
+  /** 해당 존 체류 시간 (초) */
+  durationSeconds: number;
+  /** 해당 존 체류 비율 (0~100) */
+  percentage: number;
+}
+
+/** LTHR 분석 결과 DTO — POST /lthr/analyze 응답 */
+export interface LthrAnalyzeResponseDto {
+  /** 후반 20분 평균 심박수 기반 LTHR */
+  lthr: number;
+  /** 이전 LTHR */
+  previousLthr: number | null;
+  /** 이전 대비 변화량 */
+  lthrDifference: number | null;
+  /** 30분 최고 심박수 */
+  maxHeartRate: number;
+  /** 30분 평균 심박수 */
+  averageHeartRate: number;
+  /** Z1~Z5 트레이닝 존 분석 */
+  zones: LthrZoneResultDto[];
+}
+
+/** LTHR AI 코칭 요청 DTO — POST /lthr/coaching (LTHR 분석 결과를 그대로 전달) */
+export type LthrCoachingRequestDto = LthrAnalyzeResponseDto;
+
+/** LTHR AI 코칭 응답 DTO — POST /lthr/coaching */
+export interface LthrCoachingResponseDto {
+  /** AI 코치 분석 문장 */
+  analysis: string;
+}
+
 // ─── 서버 와이어 포맷 (snake_case, 매핑 전용) ───────────────────────
 
 /** 발 압력 분포 와이어 */
@@ -166,3 +225,44 @@ export interface CoachingReportResponseWire {
   total_coaching_count: number;
   items: CoachingReportItemWire[];
 }
+
+/** LTHR 심박 샘플 와이어 */
+export interface HeartRateSampleWire {
+  elapsed_seconds: number;
+  heart_rate: number;
+}
+
+/** POST /lthr/analyze 요청 본문 와이어 */
+export interface LthrAnalyzeRequestWire {
+  heart_rate_samples: HeartRateSampleWire[];
+  previous_lthr?: number | null;
+}
+
+/** LTHR 존 결과 와이어 */
+export interface LthrZoneResultWire {
+  zone: string;
+  name: string;
+  min_bpm: number | null;
+  max_bpm: number | null;
+  duration_seconds: number;
+  percentage: number;
+}
+
+/** POST /lthr/analyze 응답 와이어 */
+export interface LthrAnalyzeResponseWire {
+  lthr: number;
+  previous_lthr: number | null;
+  lthr_difference: number | null;
+  max_heart_rate: number;
+  average_heart_rate: number;
+  zones: LthrZoneResultWire[];
+}
+
+/** POST /lthr/coaching 요청 본문 와이어 */
+export type LthrCoachingRequestWire = LthrAnalyzeResponseWire;
+
+/** POST /lthr/coaching 응답 와이어 */
+export interface LthrCoachingResponseWire {
+  analysis: string;
+}
+
