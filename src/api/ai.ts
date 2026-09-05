@@ -9,6 +9,10 @@ import type {
   AiCoachingLogDto,
   AiCoachingReportDto,
   AiFootDataDto,
+  LthrAnalyzeRequestDto,
+  LthrAnalyzeResponseDto,
+  LthrCoachingRequestDto,
+  LthrCoachingResponseDto,
   CoachingRequestWire,
   CoachingResponseWire,
   CoachingWithVoiceResponseWire,
@@ -16,6 +20,9 @@ import type {
   CoachingReportCreateRequestWire,
   CoachingReportResponseWire,
   FootDataWire,
+  LthrAnalyzeRequestWire,
+  LthrAnalyzeResponseWire,
+  LthrCoachingResponseWire,
 } from '@/types/aiApi';
 
 // AI 코칭 서버는 백엔드와 별도 주소를 쓰고 인증이 없다.
@@ -88,6 +95,52 @@ const fromReportWire = (wire: CoachingReportResponseWire): AiCoachingReportDto =
     description: it.description,
     recExercise: it.rec_exercise ?? null,
     count: it.count,
+  })),
+});
+
+const toLthrAnalyzeRequestWire = (
+  dto: LthrAnalyzeRequestDto,
+): LthrAnalyzeRequestWire => ({
+  heart_rate_samples: dto.heartRateSamples.map((s) => ({
+    elapsed_seconds: s.elapsedSeconds,
+    heart_rate: Math.round(s.heartRate),
+  })),
+  previous_lthr: dto.previousLthr ?? null,
+});
+
+const fromLthrAnalyzeResponseWire = (
+  wire: LthrAnalyzeResponseWire,
+): LthrAnalyzeResponseDto => ({
+  lthr: wire.lthr,
+  previousLthr: wire.previous_lthr ?? null,
+  lthrDifference: wire.lthr_difference ?? null,
+  maxHeartRate: wire.max_heart_rate,
+  averageHeartRate: wire.average_heart_rate,
+  zones: (wire.zones ?? []).map((z) => ({
+    zone: z.zone,
+    name: z.name,
+    minBpm: z.min_bpm ?? null,
+    maxBpm: z.max_bpm ?? null,
+    durationSeconds: z.duration_seconds,
+    percentage: z.percentage,
+  })),
+});
+
+const toLthrCoachingRequestWire = (
+  dto: LthrCoachingRequestDto,
+): LthrAnalyzeResponseWire => ({
+  lthr: dto.lthr,
+  previous_lthr: dto.previousLthr ?? null,
+  lthr_difference: dto.lthrDifference ?? null,
+  max_heart_rate: dto.maxHeartRate,
+  average_heart_rate: dto.averageHeartRate,
+  zones: dto.zones.map((z) => ({
+    zone: z.zone,
+    name: z.name,
+    min_bpm: z.minBpm,
+    max_bpm: z.maxBpm,
+    duration_seconds: z.durationSeconds,
+    percentage: z.percentage,
   })),
 });
 
@@ -175,3 +228,33 @@ export const resolveVoiceUrl = (voiceFile: string | null | undefined): string | 
   const { aiApiBaseUrl } = getEnvConfig();
   return `${aiApiBaseUrl}${voiceFile.startsWith('/') ? '' : '/'}${voiceFile}`;
 };
+
+/**
+ * LTHR 테스트 결과 계산 — POST /lthr/analyze
+ * 30분 동안 수집한 심박수 샘플들을 기반으로 LTHR, Training Zone, 통계를 계산한다.
+ */
+export const analyzeLthr = async (
+  body: LthrAnalyzeRequestDto,
+): Promise<LthrAnalyzeResponseDto> => {
+  const res = await aiClient.post<LthrAnalyzeResponseWire>(
+    '/lthr/analyze',
+    toLthrAnalyzeRequestWire(body),
+  );
+  return fromLthrAnalyzeResponseWire(res.data);
+};
+
+/**
+ * LTHR 테스트 결과 AI 코치 분석 — POST /lthr/coaching
+ * LTHR 계산 결과를 바탕으로 사후 AI 코칭 총평을 생성한다.
+ */
+export const createLthrCoaching = async (
+  body: LthrCoachingRequestDto,
+): Promise<LthrCoachingResponseDto> => {
+  const res = await aiClient.post<LthrCoachingResponseWire>(
+    '/lthr/coaching',
+    toLthrCoachingRequestWire(body),
+    { timeout: 60000 },
+  );
+  return { analysis: res.data.analysis };
+};
+

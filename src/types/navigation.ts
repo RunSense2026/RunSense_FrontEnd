@@ -2,6 +2,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 
+import type { LthrAnalyzeResponseDto } from '@/types/aiApi';
+
 // 러닝 종료 시 대시보드에서 리포트로 넘기는 실제 세션 요약 값.
 // (대시보드별로 측정 항목이 달라 모두 optional — 누락 시 ReportScreen 에서 기본값으로 대체)
 export interface RunSummaryParam {
@@ -46,7 +48,11 @@ export type RootStackParamList = {
 
   // LTHR
   LTHRTest: undefined;
-  LTHRReport: undefined;
+  LTHRReport: {
+    result?: LthrAnalyzeResponseDto;
+    coachingAnalysis?: string;
+    samples?: number[];
+  } | undefined;
 
   // Detail
   WeeklyGoalSetup: undefined;

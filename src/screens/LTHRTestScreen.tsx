@@ -1,13 +1,15 @@
 import { Fragment, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Dimensions } from 'react-native';
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { analyzeLthr, createLthrCoaching } from '@/api/ai';
 import { DarkShell, RSTabBar, type TabId } from '@/components/domain';
+import { handleRootTabPress } from '@/navigation/tabRoutes';
+import { useMyLthr } from '@/stores/profileStore';
 import { colors } from '@/theme/tokens';
 import { hrZoneColor } from '@/utils/format';
 
-import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps } from '@/types/navigation';
 
 // HR graph width = screen − ScrollView padding (18×2) − HR card padding (14×2)
@@ -15,6 +17,9 @@ const HR_GRAPH_W = Dimensions.get('window').width - 18 * 2 - 14 * 2;
 
 export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const [elapsed] = useState(754);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const myLthr = useMyLthr();
+
   const TOTAL = 1800;
   const pct = Math.min(100, (elapsed / TOTAL) * 100);
 
@@ -37,6 +42,41 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const rss = String(remaining % 60).padStart(2, '0');
 
   const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
+
+  const handleStop = async () => {
+    if (isAnalyzing) return;
+    setIsAnalyzing(true);
+
+    try {
+      const heartRateSamples = samples.map((hr, idx) => ({
+        elapsedSeconds: Math.round((idx / (samples.length - 1)) * 1800),
+        heartRate: hr,
+      }));
+
+      const analyzeRes = await analyzeLthr({
+        heartRateSamples,
+        previousLthr: myLthr ?? null,
+      });
+
+      let coachingAnalysis: string | undefined;
+      try {
+        const coachingRes = await createLthrCoaching(analyzeRes);
+        coachingAnalysis = coachingRes.analysis;
+      } catch {
+        // 코칭 문장 생성 실패 시 fallback
+      }
+
+      navigation.navigate('LTHRReport', {
+        result: analyzeRes,
+        coachingAnalysis,
+        samples,
+      });
+    } catch {
+      navigation.navigate('LTHRReport', { samples });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   return (
     <DarkShell>
@@ -213,12 +253,18 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
 
         {/* LTHR pair cards */}
         <View className="flex-row gap-2 mb-[14px]">
-          <LTHRStatCard label="현재 LTHR" value="—" sub="미설정" tone="muted" />
+          <LTHRStatCard
+            label="현재 LTHR"
+            value={myLthr ? String(myLthr) : '—'}
+            sub={myLthr ? 'bpm' : '미설정'}
+            tone={myLthr ? 'cool' : 'muted'}
+            highlight={!!myLthr}
+          />
           <LTHRStatCard label="Karvonen 추정값" value="~162" sub="bpm" tone="hot" highlight />
         </View>
 
         {/* Stop button */}
-        <Pressable onPress={() => navigation.navigate('LTHRReport')}>
+        <Pressable onPress={handleStop} disabled={isAnalyzing}>
           <LinearGradient
             colors={['#ef4444', '#dc2626']}
             start={{ x: 0, y: 0 }}
@@ -230,12 +276,19 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
               alignItems: 'center',
               justifyContent: 'center',
               gap: 8,
+              opacity: isAnalyzing ? 0.75 : 1,
             }}
           >
-            <Svg width={14} height={14} viewBox="0 0 24 24">
-              <Rect x={6} y={6} width={12} height={12} rx={1.5} fill="#fff" />
-            </Svg>
-            <Text className="text-white text-[14px] font-bold">테스트 중지</Text>
+            {isAnalyzing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Svg width={14} height={14} viewBox="0 0 24 24">
+                <Rect x={6} y={6} width={12} height={12} rx={1.5} fill="#fff" />
+              </Svg>
+            )}
+            <Text className="text-white text-[14px] font-bold">
+              {isAnalyzing ? '분석 중...' : '테스트 중지'}
+            </Text>
           </LinearGradient>
         </Pressable>
 
@@ -320,7 +373,16 @@ const HRZoneGraph = ({ data, width, height }: HRZoneGraphProps) => {
 const LTHR_TONES = {
   muted: { color: 'rgba(167,139,250,0.5)', border: 'rgba(167,139,250,0.12)', bg: 'rgba(255,255,255,0.03)' },
   hot: { color: '#fbbf24', border: 'rgba(251,191,36,0.3)', bg: 'rgba(251,191,36,0.08)' },
+  cool: { color: '#a78bfa', border: 'rgba(167,139,250,0.3)', bg: 'rgba(167,139,250,0.08)' },
 };
+
+interface LTHRStatCardProps {
+  label: string;
+  value: string;
+  sub: string;
+  tone: 'muted' | 'hot' | 'cool';
+  highlight?: boolean;
+}
 
 const LTHRStatCard = ({
   label,
@@ -328,13 +390,7 @@ const LTHRStatCard = ({
   sub,
   tone,
   highlight,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  tone: 'muted' | 'hot';
-  highlight?: boolean;
-}) => {
+}: LTHRStatCardProps) => {
   const c = LTHR_TONES[tone];
   return (
     <View
