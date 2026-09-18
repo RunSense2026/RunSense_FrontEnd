@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { fmtPace, fmtTime, hrZone, spkToMinutes } from '@/utils/format';
 import { useRunSession } from '@/hooks/useRunSession';
 import { useLiveCoaching } from '@/hooks/useLiveCoaching';
 import { useFootPressure } from '@/hooks/useFootPressure';
+import { useWatchRunLink } from '@/hooks/useWatchRunLink';
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useMyLthr } from '@/stores/profileStore';
@@ -43,8 +44,30 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
   const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
-  const hr = 156 + Math.round(Math.sin(tick / 4) * 3);
-  const cad = 178 + Math.round(Math.sin(tick / 3) * 2);
+
+  // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
+  // 직전 60초 구간의 양발 압력 평균(0~100 정규화)을 왼발·오른발 모두 실어 보낸다.
+  // (심박·케이던스는 아래 useWatchRunLink 값을 ref 로 읽는다 — 호출 시점의 최신값)
+  const metricsRef = useRef({ hr: 0, cad: 0 });
+  const {
+    latest: liveCoaching,
+    voiceUrl: coachVoiceUrl,
+    all: collectedCoachings,
+  } = useLiveCoaching(paused, () => {
+    const { L, R } = useInsoleStore.getState().drainFootAverages();
+    return {
+      pace: spkToMinutes(paceSpk),
+      heartRate: metricsRef.current.hr,
+      cadence: metricsRef.current.cad,
+      ...footCoachingPayload(L, R),
+    };
+  });
+
+  // 심박·케이던스 — 갤럭시 워치가 연결돼 있으면 워치 센서값, 아니면 시뮬레이션.
+  // 거리 모드 목표 페이스는 워치 페이스 링 기준으로도 쓰인다.
+  const watch = useWatchRunLink(tick, liveCoaching, route.params?.targetPaceSpk);
+  const { hr, cad } = watch;
+  metricsRef.current = { hr, cad };
   // 심박 존은 마이페이지에 저장된 LTHR 기준(미설정 시 기본값).
   const lthr = useMyLthr();
   const zone = hrZone(hr, lthr);
@@ -58,22 +81,6 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   // HR 스파크라인 데이터는 tick(1초) 단위로만 바뀌면 충분하다. useMemo 로 참조를
   // 고정해, 페이스 이징 등으로 화면이 자주 리렌더돼도 스파크라인은 다시 안 그린다.
   const hrTrace = useMemo(() => genHrTrace(tick), [tick]);
-
-  // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
-  // 직전 60초 구간의 양발 압력 평균(0~100 정규화)을 왼발·오른발 모두 실어 보낸다.
-  const {
-    latest: liveCoaching,
-    voiceUrl: coachVoiceUrl,
-    all: collectedCoachings,
-  } = useLiveCoaching(paused, () => {
-    const { L, R } = useInsoleStore.getState().drainFootAverages();
-    return {
-      pace: spkToMinutes(paceSpk),
-      heartRate: hr,
-      cadence: cad,
-      ...footCoachingPayload(L, R),
-    };
-  });
 
   const deviation = Math.max(-30, Math.min(30, paceSpk - target));
   const ringPct = 0.5 + -deviation / 60;
@@ -112,7 +119,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         <View className="px-4 pt-4 flex-row gap-2">
           <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
           <MetricCard value={fmtTime(sec)} label="시간" />
-          <MetricCard value={String(hr)} unit="bpm" label="심박수" accent={zone.color} />
+          <MetricCard value={String(hr)} unit="bpm" label={watch.hrFromWatch ? '심박수 · 워치' : '심박수'} accent={zone.color} />
         </View>
 
         {/* ── 카드 슬라이드 영역(카드만 좌우로 넘어감) ── */}
@@ -200,7 +207,16 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         onConfirm={() => {
           setEndOpen(false);
           navigation.navigate('Report', {
-            run: { distanceKm: distKm, durationSec: sec, paceSpk, avgHeartRate: hr, cadence: cad, splits, coachings: collectedCoachings },
+            run: {
+              distanceKm: distKm,
+              durationSec: sec,
+              paceSpk,
+              avgHeartRate: watch.avgHr,
+              cadence: watch.avgCad,
+              formScore: watch.formScore,
+              splits,
+              coachings: collectedCoachings,
+            },
           });
         }}
       />

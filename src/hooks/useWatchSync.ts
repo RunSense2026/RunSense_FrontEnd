@@ -1,0 +1,190 @@
+import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
+
+import { navigateFromOutside } from '@/navigation/navigationRef';
+import { useAuthStore } from '@/stores/authStore';
+import { useInsoleStore } from '@/stores/insoleStore';
+import { useProfileStore } from '@/stores/profileStore';
+import { useWatchStore } from '@/stores/watchStore';
+import { packetToFootData } from '@/utils/insoleMetrics';
+import { accessToken, refreshToken, onTokensChanged } from '@/utils/storage';
+import {
+  WEAR_PATH,
+  isWearSupported,
+  parseWearData,
+  wearBridge,
+  type WatchLive,
+  type WatchRunComplete,
+  type WatchRunState,
+} from '@/wear/wearBridge';
+
+/** 워치로 족압을 흘려보내는 최소 간격(ms). 인솔은 초당 수십 패킷이라 1Hz 로만 보낸다. */
+const INSOLE_SYNC_MS = 1000;
+/** 워치 연결 상태를 다시 확인하는 간격(ms) */
+const STATUS_POLL_MS = 10000;
+
+const toNumberOrNull = (v: string): number | null => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/**
+ * 폰 ↔ 갤럭시 워치 동기화 (App 루트에서 한 번만 마운트).
+ *
+ *  폰 → 워치 : 로그인 토큰 · 프로필(LTHR 등) · 인솔 연결 상태 · 인솔 실시간 족압
+ *  워치 → 폰 : 러닝 상태 · 실시간 지표(심박·케이던스·거리) · 완료 요약 · 리포트 열기 요청
+ */
+export const useWatchSync = (): void => {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const userId = useAuthStore((s) => s.userId);
+  const userName = useAuthStore((s) => s.userName);
+
+  const insoleLConnected = useInsoleStore((s) => s.L.connected);
+  const insoleRConnected = useInsoleStore((s) => s.R.connected);
+
+  const lthr = useProfileStore((s) => s.lthr);
+  const restingHr = useProfileStore((s) => s.restingHr);
+  const birthDate = useProfileStore((s) => s.birthDate);
+  const height = useProfileStore((s) => s.height);
+  const weight = useProfileStore((s) => s.weight);
+  const profileName = useProfileStore((s) => s.name);
+
+  // ── 로그인 토큰 ─────────────────────────────────────
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    if (!isAuthenticated) {
+      void wearBridge.clearAuth();
+      return;
+    }
+    const push = () => {
+      const access = accessToken.get();
+      const refresh = refreshToken.get();
+      if (!access || !refresh || userId == null) return;
+      void wearBridge.sendAuth({
+        accessToken: access,
+        refreshToken: refresh,
+        userId,
+        userName: userName ?? '',
+      });
+    };
+    push();
+    // 재발급으로 토큰이 바뀌면 워치 것도 갱신한다.
+    return onTokensChanged(push);
+  }, [isAuthenticated, userId, userName]);
+
+  // ── 프로필 (LTHR 은 서버에 없고 기기에만 있어 워치가 폰에서 받아야 한다) ──
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    void wearBridge.sendProfile({
+      lthr: toNumberOrNull(lthr),
+      restingHeartRate: toNumberOrNull(restingHr),
+      birthDate: birthDate || null,
+      height: toNumberOrNull(height),
+      weight: toNumberOrNull(weight),
+      userName: profileName || userName || null,
+    });
+  }, [lthr, restingHr, birthDate, height, weight, profileName, userName]);
+
+  // ── 인솔 연결 상태 ──────────────────────────────────
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    void wearBridge.sendInsoleStatus({
+      leftConnected: insoleLConnected,
+      rightConnected: insoleRConnected,
+    });
+  }, [insoleLConnected, insoleRConnected]);
+
+  // ── 인솔 실시간 족압 (1Hz) ──────────────────────────
+  const lastInsoleSent = useRef(0);
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    return useInsoleStore.subscribe((state) => {
+      if (!state.L.connected && !state.R.connected) return;
+      const now = Date.now();
+      if (now - lastInsoleSent.current < INSOLE_SYNC_MS) return;
+      lastInsoleSent.current = now;
+      void wearBridge.sendInsoleData(
+        packetToFootData(state.L.packet),
+        packetToFootData(state.R.packet),
+      );
+    });
+  }, []);
+
+  // ── 워치 → 폰 메시지 ────────────────────────────────
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    const store = useWatchStore.getState();
+    return wearBridge.subscribe((msg) => {
+      switch (msg.path) {
+        case WEAR_PATH.RUN_STATE: {
+          const s = parseWearData<WatchRunState>(msg);
+          if (!s) return;
+          store.setRunPhase(
+            s.state === 'ended' ? 'idle' : s.state === 'paused' ? 'paused' : 'running',
+          );
+          break;
+        }
+        case WEAR_PATH.RUN_LIVE: {
+          const live = parseWearData<WatchLive>(msg);
+          if (live) store.setLive(live);
+          break;
+        }
+        case WEAR_PATH.RUN_COMPLETE: {
+          const summary = parseWearData<WatchRunComplete>(msg);
+          if (summary) store.setComplete(summary);
+          break;
+        }
+        case WEAR_PATH.OPEN_REPORT: {
+          const body = parseWearData<{ activityId: number | null }>(msg);
+          const activityId =
+            body?.activityId ?? useWatchStore.getState().lastComplete?.activityId ?? null;
+          if (activityId != null) navigateFromOutside('Report', { activityId });
+          else navigateFromOutside('Main', { screen: 'History' });
+          break;
+        }
+        case WEAR_PATH.INSOLE_REQUEST: {
+          // 워치 센서 확인 화면이 현재 인솔 상태를 물어봄 — 즉시 다시 보낸다.
+          const ins = useInsoleStore.getState();
+          void wearBridge.sendInsoleStatus({
+            leftConnected: ins.L.connected,
+            rightConnected: ins.R.connected,
+          });
+          if (ins.L.connected || ins.R.connected) {
+            void wearBridge.sendInsoleData(
+              packetToFootData(ins.L.packet),
+              packetToFootData(ins.R.packet),
+            );
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    });
+  }, []);
+
+  // ── 연결 상태 폴링 (앱이 화면에 있을 때만) ──────────
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const refresh = () => {
+      void wearBridge.getStatus().then((status) => useWatchStore.getState().setStatus(status));
+    };
+    const start = () => {
+      refresh();
+      if (!timer) timer = setInterval(refresh, STATUS_POLL_MS);
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    start();
+    const sub = AppState.addEventListener('change', (state) =>
+      state === 'active' ? start() : stop(),
+    );
+    return () => {
+      stop();
+      sub.remove();
+    };
+  }, []);
+};

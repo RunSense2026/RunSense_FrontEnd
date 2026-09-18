@@ -10,6 +10,7 @@ import { logout, readAllRuns, readMyProfile } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useInsoleStore } from '@/stores/insoleStore';
+import { useWatchStore } from '@/stores/watchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { ageFromBirthDate, genderLabel } from '@/utils/profile';
 import { refreshToken } from '@/utils/storage';
@@ -37,8 +38,9 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const insoleL = useInsoleStore((s) => s.L);
   const insoleR = useInsoleStore((s) => s.R);
-  // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(이름만, 항상 포함)
-  const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + 1;
+  // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(Data Layer 로 실제 연결 확인)
+  const watchConnected = useWatchStore((s) => s.connected);
+  const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + (watchConnected ? 1 : 0);
   const { notifications, distanceUnit, setNotifications, toggleDistanceUnit } = useSettingsStore();
   const [loggingOut, setLoggingOut] = useState(false);
   // 서버는 생년월일만 저장하므로 나이는 화면에서 계산해 보여준다.

@@ -7,6 +7,7 @@ import { DarkShell, DarkNavHeader } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useWatchStore } from '@/stores/watchStore';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -20,6 +21,8 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   // 미니 카드 값 — 연결 기기는 인솔 연결 상태(+Galaxy Watch), LTHR 은 프로필에 저장된 값.
   const insoleCount =
     (useInsoleStore((s) => s.L.connected) ? 1 : 0) + (useInsoleStore((s) => s.R.connected) ? 1 : 0);
+  const watchConnected = useWatchStore((s) => s.connected);
+  const deviceCount = insoleCount + (watchConnected ? 1 : 0);
   const lthr = useProfileStore((s) => s.lthr);
 
   const pace = useMemo(() => {
@@ -304,8 +307,8 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
         <View className="flex-row gap-2 mb-3">
           <MiniInfo
             label="연결 기기"
-            value={String(insoleCount + 1)}
-            sub={insoleCount === 2 ? '모두 정상' : '인솔 확인 필요'}
+            value={String(deviceCount)}
+            sub={insoleCount === 2 && watchConnected ? '모두 정상' : insoleCount < 2 ? '인솔 확인 필요' : '워치 확인 필요'}
             tone="ok"
           />
           <MiniInfo label="내 LTHR" value={lthr || '--'} sub={lthr ? 'bpm' : '미설정'} tone="hot" />

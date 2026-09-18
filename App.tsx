@@ -4,11 +4,19 @@ import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { navigationRef } from '@/navigation/navigationRef';
+import { useWatchSync } from '@/hooks/useWatchSync';
 import { loadPersistedSession, loadPersistedProfile } from '@/utils/storage';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 
 import './global.css';
+
+// 갤럭시 워치 동기화 — NavigationContainer 안에서 한 번만 마운트되는 빈 컴포넌트.
+const WatchSync = () => {
+  useWatchSync();
+  return null;
+};
 
 const App = () => {
   const [booting, setBooting] = useState(true);
@@ -40,7 +48,8 @@ const App = () => {
 
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
+        <WatchSync />
         <RootNavigator initialRouteName={initialRoute} />
       </NavigationContainer>
     </SafeAreaProvider>

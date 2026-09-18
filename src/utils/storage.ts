@@ -25,6 +25,18 @@ let _accessToken: string | null = null;
 let _refreshToken: string | null = null;
 let _remember = false;
 
+// 토큰이 바뀔 때(로그인·재발급·로그아웃) 알림 — 워치 동기화(useWatchSync)가 구독한다.
+const tokenListeners = new Set<() => void>();
+const notifyTokens = () => tokenListeners.forEach((cb) => cb());
+
+/** 토큰 변경 구독. 반환된 함수로 해제한다. */
+export const onTokensChanged = (cb: () => void): (() => void) => {
+  tokenListeners.add(cb);
+  return () => {
+    tokenListeners.delete(cb);
+  };
+};
+
 export interface PersistedSession {
   userId: number;
   userName: string;
@@ -65,6 +77,7 @@ export const setTokens = (access: string, refresh: string): void => {
     AsyncStorage.setItem(K_ACCESS, access).catch(() => {});
     AsyncStorage.setItem(K_REFRESH, refresh).catch(() => {});
   }
+  notifyTokens();
 };
 
 /** 로그아웃 시 메모리 + 영구 저장 모두 제거 */
@@ -73,6 +86,7 @@ export const clearTokens = (): void => {
   _refreshToken = null;
   _remember = false;
   removePersisted();
+  notifyTokens();
 };
 
 /** '로그인 유지' 여부 설정. 끄면 영구 저장된 토큰/세션을 제거한다. */
