@@ -26,6 +26,8 @@ export const WEAR_PATH = {
   COACH: '/runsense/coach',
   // 워치 → 폰
   INSOLE_REQUEST: '/runsense/insole/request',
+  /** 백엔드가 워치 토큰을 거부함 — 폰이 (필요하면 재발급해서) 최신 토큰을 다시 보낸다 */
+  AUTH_REQUEST: '/runsense/auth/request',
   RUN_STATE: '/runsense/run/state',
   RUN_LIVE: '/runsense/run/live',
   RUN_COMPLETE: '/runsense/run/complete',

@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
+import { reissue } from '@/api';
 import { navigateFromOutside } from '@/navigation/navigationRef';
 import { useAuthStore } from '@/stores/authStore';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useWatchStore } from '@/stores/watchStore';
 import { packetToFootData } from '@/utils/insoleMetrics';
-import { accessToken, refreshToken, onTokensChanged } from '@/utils/storage';
+import { accessToken, refreshToken, onTokensChanged, setTokens } from '@/utils/storage';
 import {
   WEAR_PATH,
   isWearSupported,
@@ -26,6 +27,53 @@ const STATUS_POLL_MS = 10000;
 const toNumberOrNull = (v: string): number | null => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/** JWT 의 만료 시각(ms). 파싱 실패 시 null */
+const jwtExpiresAt = (token: string): number | null => {
+  try {
+    const payload = token.split('.')[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+      exp?: number;
+    };
+    return typeof json.exp === 'number' ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+/** 만료가 5분 미만 남았으면 재발급이 필요하다고 본다 */
+const ACCESS_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+/**
+ * 워치가 토큰을 거부당했을 때: 리프레시 토큰은 계정당 하나이고 서버가 회전시키므로
+ * 재발급은 항상 폰이 한다. 새 토큰은 setTokens → onTokensChanged 로 워치에 자동 전달된다.
+ */
+const answerWatchAuthRequest = async (): Promise<void> => {
+  const access = accessToken.get();
+  const refresh = refreshToken.get();
+  if (!access || !refresh) return;
+  const exp = jwtExpiresAt(access);
+  const stale = exp == null || exp - Date.now() < ACCESS_REFRESH_MARGIN_MS;
+  if (!stale) {
+    // 아직 유효한 토큰 — 워치 저장본이 어긋났을 뿐이니 그대로 다시 보낸다.
+    const { userId, userName } = useAuthStore.getState();
+    if (userId != null) {
+      void wearBridge.sendAuth({
+        accessToken: access,
+        refreshToken: refresh,
+        userId,
+        userName: userName ?? '',
+      });
+    }
+    return;
+  }
+  try {
+    const tokens = await reissue({ refreshToken: refresh });
+    setTokens(tokens.accessToken, tokens.refreshToken);
+  } catch {
+    // 리프레시도 만료 — 사용자가 다시 로그인해야 한다. (apiClient 가 세션을 정리한다)
+  }
 };
 
 /**
@@ -140,6 +188,10 @@ export const useWatchSync = (): void => {
             body?.activityId ?? useWatchStore.getState().lastComplete?.activityId ?? null;
           if (activityId != null) navigateFromOutside('Report', { activityId });
           else navigateFromOutside('Main', { screen: 'History' });
+          break;
+        }
+        case WEAR_PATH.AUTH_REQUEST: {
+          void answerWatchAuthRequest();
           break;
         }
         case WEAR_PATH.INSOLE_REQUEST: {
