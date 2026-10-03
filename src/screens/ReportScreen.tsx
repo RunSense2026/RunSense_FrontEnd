@@ -281,7 +281,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
 
   return (
     <LightShell>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 16 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}>
         {/* Header */}
         <View className="flex-row justify-between items-center py-2">
           <View>

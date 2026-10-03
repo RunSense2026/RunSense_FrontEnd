@@ -21,7 +21,7 @@ export const FindAccountScreen = ({ navigation }: ScreenProps<'FindAccount'>) =>
     <AuthShell>
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 20 }}
         keyboardShouldPersistTaps="handled"
       >
         <View className="pb-[18px]">

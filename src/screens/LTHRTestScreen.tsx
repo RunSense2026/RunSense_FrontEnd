@@ -96,7 +96,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
         pointerEvents="none"
       />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         {/* Inline header (no back; stop button used instead) */}
         <View className="flex-row justify-between items-center pt-1 pb-[14px]">
           <View>

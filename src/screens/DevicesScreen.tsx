@@ -93,7 +93,7 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
         pointerEvents="none"
       />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         <DarkNavHeader
           title="블루투스 기기"
           sub="연결 상태"

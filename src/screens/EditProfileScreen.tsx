@@ -65,7 +65,7 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
 
   return (
     <LightShell>
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         {/* Header */}
         <View className="flex-row items-center gap-2 pt-1 pb-4">
           <Pressable onPress={() => navigation.goBack()} hitSlop={8} className="w-8 h-8 items-center justify-center -ml-1">

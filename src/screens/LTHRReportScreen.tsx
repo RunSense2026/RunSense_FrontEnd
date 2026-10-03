@@ -118,7 +118,7 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
         pointerEvents="none"
       />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         <DarkNavHeader title="LTHR 테스트 결과" sub="2026.05.17 · 30:00" onBack={() => navigation.goBack()} />
 
         {/* HERO RESULT */}
