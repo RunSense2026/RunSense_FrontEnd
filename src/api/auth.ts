@@ -66,12 +66,11 @@ export const updateMyProfile = async (
   return res.data.data;
 };
 
-/**
- * 내 프로필 조회.
- * 백엔드에 조회 전용 엔드포인트가 없어, 수정 API 에 빈 본문(= 아무 필드도 수정하지 않음)을 보내
- * 응답으로 오는 현재 프로필을 읽는다. GET /api/users 가 생기면 이 함수만 바꾸면 된다.
- */
-export const readMyProfile = (): Promise<UserResponseDto> => updateMyProfile({});
+/** 내 프로필 조회 — GET /api/users (인증 필요) */
+export const readMyProfile = async (): Promise<UserResponseDto> => {
+  const res = await apiClient.get<ApiResponse<UserResponseDto>>('/api/users');
+  return res.data.data;
+};
 
 /** 로그아웃 — POST /api/users/logout */
 export const logout = async (body: TokenLogoutRequestDto): Promise<void> => {

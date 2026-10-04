@@ -7,7 +7,7 @@ import { persistProfile, type PersistedProfile } from '@/utils/storage';
 // 사용자 프로필 — 설정(마이페이지)/프로필 수정 화면이 공유하는 단일 소스.
 //
 // 값의 출처가 셋으로 나뉜다:
-//  - 이름·생년월일(→나이)·성별·키·체중: 백엔드 `PATCH /api/users` (readMyProfile/updateMyProfile)
+//  - 이름·생년월일(→나이)·성별·키·체중: 백엔드 `GET /api/users`(readMyProfile) 로 읽고 `PATCH /api/users`(updateMyProfile) 로 수정
 //  - 안정시 심박수·LTHR: LTHR 테스트 결과(`POST /api/lthr`)로만 갱신되고, 프로필 응답으로 읽기만 한다
 //  - 이메일·가입일·러닝 횟수·누적 거리: 로그인 응답 시드 → 설정 화면에서 서버 값으로 갱신
 //  - 프로필 사진: 서버에 저장 필드가 없어 기기(AsyncStorage)에만 보관
@@ -41,7 +41,7 @@ interface ProfileState {
    * 로그인 응답 동기화처럼 '기기 저장은 하지 않을' 때는 `{ persist: false }` 로 호출한다.
    */
   setProfile: (patch: Partial<EditableProfile>, options?: { persist?: boolean }) => void;
-  /** 서버 프로필 응답(PATCH /api/users)을 반영 — 서버 값이 기기 캐시보다 우선한다 */
+  /** 서버 프로필 응답(GET·PATCH /api/users)을 반영 — 서버 값이 기기 캐시보다 우선한다 */
   applyServerProfile: (user: UserResponseDto) => void;
   /** 로그인/세션 복원 시 계정 이름·이메일을 동기화 (기기 캐시는 건드리지 않는다) */
   setAccount: (name: string, email: string) => void;
