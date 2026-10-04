@@ -76,6 +76,10 @@ export interface UserUpdateRequestDto {
   height?: number;
   /** 체중 (kg) */
   weight?: number;
+  /** 안정시 심박수 (bpm) */
+  restingHeartRate?: number;
+  /** 젖산 역치 심박수 LTHR (bpm, 정수) */
+  lthr?: number;
 }
 
 /** 유저 정보 응답 — PATCH /api/users (수정 후 전체 프로필) */
@@ -90,6 +94,10 @@ export interface UserResponseDto {
   height: number | null;
   /** 체중 (kg) */
   weight: number | null;
+  /** 안정시 심박수 (bpm) — 미입력이면 null */
+  restingHeartRate: number | null;
+  /** 젖산 역치 심박수 LTHR (bpm) — 미입력이면 null */
+  lthr: number | null;
   isVerified: boolean;
   /** 가입일 (date) */
   createdAt: string;

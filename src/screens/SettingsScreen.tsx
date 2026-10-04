@@ -6,16 +6,34 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { LightShell, ProfileAvatar } from '@/components/domain';
-import { logout, readAllRuns, readMyProfile } from '@/api';
+import { logout, readAllRuns, readMyProfile, updateMyProfile } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useWatchStore } from '@/stores/watchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { ageFromBirthDate, genderLabel } from '@/utils/profile';
+import { ageFromBirthDate, fieldToNumber, genderLabel } from '@/utils/profile';
 import { refreshToken } from '@/utils/storage';
 
+import type { UserResponseDto, UserUpdateRequestDto } from '@/types/api';
 import type { TabScreenProps } from '@/types/navigation';
+
+// 이전 버전은 안정시 심박수·LTHR 을 기기에만 저장했다.
+// 서버에 값이 없고 기기에만 있으면 한 번 올려, 다른 기기·재로그인·AI 코칭에서도 쓰이게 한다.
+const uploadDeviceOnlyHeartRates = (user: UserResponseDto) => {
+  const { restingHr, lthr, applyServerProfile } = useProfileStore.getState();
+  const restingValue = fieldToNumber(restingHr);
+  const lthrValue = fieldToNumber(lthr);
+  const patch: UserUpdateRequestDto = {};
+  if (user.restingHeartRate == null && restingValue) patch.restingHeartRate = restingValue;
+  if (user.lthr == null && lthrValue && Number.isInteger(lthrValue)) patch.lthr = lthrValue;
+  if (Object.keys(patch).length === 0) return;
+  updateMyProfile(patch)
+    .then(applyServerProfile)
+    .catch(() => {
+      // 실패해도 기기 값은 남아 있어 다음 진입 때 다시 시도한다.
+    });
+};
 
 export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   const {
@@ -53,7 +71,9 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
       let cancelled = false;
       readMyProfile()
         .then((user) => {
-          if (!cancelled) applyServerProfile(user);
+          if (cancelled) return;
+          applyServerProfile(user);
+          uploadDeviceOnlyHeartRates(user);
         })
         .catch(() => {
           // 조회 실패는 무시 — 기기에 캐시된 값/'--' 가 유지된다.
