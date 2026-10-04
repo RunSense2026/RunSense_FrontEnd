@@ -118,6 +118,9 @@ dependencies {
 
     implementation project(':react-native-config')
 
+    // 갤럭시 워치 연동 (Wearable Data Layer) — 워치 앱과 같은 applicationId·서명 키를 쓴다
+    implementation("com.google.android.gms:play-services-wearable:18.2.0")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {
