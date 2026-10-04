@@ -1,6 +1,7 @@
 // FSR 인솔 데이터로부터 케이던스·착지 히트맵을 계산하는 순수 함수 모음.
 
 import type { AiFootDataDto, AiFootHitmapDto } from '@/types/aiApi';
+import type { InsolePacket } from '@/types/insole';
 
 export const N_SENSORS = 5;
 /** 뒤꿈치(5번) 센서의 avg 배열 인덱스 — 케이던스 검출에 사용 */
@@ -107,6 +108,13 @@ const toFootData = (data: FootAvg): AiFootDataDto => {
     hitmap,
   };
 };
+
+/**
+ * 인솔 최신 패킷 1개 → 발 데이터. 워치로 1초마다 흘려보내는 실시간 족압에 쓴다.
+ * 패킷이 없으면(미연결) 중립값을 돌려준다.
+ */
+export const packetToFootData = (packet: InsolePacket | null): AiFootDataDto =>
+  packet ? toFootData({ avg: packet.avg, total: packet.total }) : NEUTRAL_FOOT;
 
 /**
  * 양발 구간 평균 → AI 코칭 요청의 left_foot / right_foot.

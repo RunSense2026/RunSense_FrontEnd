@@ -49,10 +49,20 @@ export type RootStackParamList = {
   // LTHR
   LTHRTest: undefined;
   LTHRReport: {
-    result?: LthrAnalyzeResponseDto;
+    /** LTHR 분석 결과 (AI 서버 실패 시 기기에서 같은 방식으로 계산한 값) */
+    result: LthrAnalyzeResponseDto;
     coachingAnalysis?: string;
-    samples?: number[];
-  } | undefined;
+    /** 차트용 심박 추이 — 본 테스트를 30초 구간 평균으로 줄인 값 */
+    samples: number[];
+    /** 테스트 전 안정 측정 단계의 평균 심박수 (bpm) */
+    restingHeartRate: number;
+    /** 본 테스트 진행 시간(초) */
+    testSeconds: number;
+    /** 테스트 종료 시각 (ISO) */
+    finishedAt: string;
+    /** 워치 심박이 없어 시뮬레이션 값이 섞였는지 */
+    simulated: boolean;
+  };
 
   // Detail
   WeeklyGoalSetup: undefined;

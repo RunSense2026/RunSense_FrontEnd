@@ -1,36 +1,58 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, type DimensionValue } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Platform,
+  type DimensionValue,
+} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
+import Svg, { Path, Circle, G, Line, Text as SvgText } from 'react-native-svg';
 
-import { LightShell, WeatherIcon, deriveWeatherCondition, findPty, type WeatherCondition } from '@/components/domain';
-import { fetchWeatherData, fetchAirQualityData, fetchSkyCode } from '@/api';
+import { LightShell, WeatherIcon, deriveWeatherCondition } from '@/components/domain';
+import { useNearbyParks } from '@/hooks/useNearbyParks';
 import { useResolvedLocation, type ResolvedLocation } from '@/hooks/useResolvedLocation';
+import { useWeather, useAirQuality } from '@/hooks/useWeatherAir';
 import { gradients } from '@/theme/tokens';
+import { PARK_TAGS } from '@/types/api';
 
-import type { AirQualityItem, WeatherItem } from '@/types/publicApi';
+import type { AirQualityResponseDto, ParkResponseDto, ParkTag } from '@/types/api';
 import type { TabScreenProps } from '@/types/navigation';
 
-type CourseSort = 'score' | 'name';
-const COURSE_SORT_LABELS: Record<CourseSort, string> = { score: '추천순', name: '이름순' };
+type CourseSort = 'distance' | 'area' | 'name';
+const COURSE_SORT_LABELS: Record<CourseSort, string> = { distance: '거리순', area: '넓은순', name: '이름순' };
 
-const COURSES = [
-  { name: '한강공원 합정 산책로', desc: '강변 따라 평탄한 직선 코스, 공기 흐름 좋음', score: 94 },
-  { name: '망원동 골목 코스', desc: '조용한 주택가 도심 러닝, 신호 적음', score: 82 },
-  { name: '월드컵공원 둘레길', desc: '언덕 구간 포함 인터벌 추천, 흙길 일부', score: 76 },
-];
-
-export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
+export const CourseScreen = ({ navigation }: TabScreenProps<'Course'>) => {
   const [refreshKey, setRefreshKey] = useState(0);
-  const [courseSort, setCourseSort] = useState<CourseSort>('score');
+  const [courseSort, setCourseSort] = useState<CourseSort>('distance');
+  const [tags, setTags] = useState<ParkTag[]>([]);
+  const [selectedRank, setSelectedRank] = useState<number | null>(null);
 
-  // GPS → 기상청 격자/에어코리아 측정소/표시 지역명 (실패 시 강남구 폴백). 새로고침 시 재조회.
+  // GPS → 위경도 + 표시 지역명 (실패 시 강남구 폴백). 새로고침 시 재조회.
   const location = useResolvedLocation(refreshKey);
+  // 주변 공원 추천 — GET /api/course/nearby (위치·시설 필터가 바뀌면 재조회)
+  const { parks, loading, error } = useNearbyParks(location, tags);
 
-  const maxScore = Math.max(...COURSES.map((c) => c.score));
-  const sortedCourses = [...COURSES].sort((a, b) =>
-    courseSort === 'name' ? a.name.localeCompare(b.name) : b.score - a.score,
+  const sortedParks = useMemo(
+    () =>
+      [...parks].sort((a, b) => {
+        if (courseSort === 'name') return a.name.localeCompare(b.name);
+        if (courseSort === 'area') return (b.area ?? -1) - (a.area ?? -1);
+        return a.rank - b.rank; // 서버 순위 = 가까운 순
+      }),
+    [parks, courseSort],
   );
+  // 지도·카드 강조 — 고른 공원이 없으면 가장 가까운 공원
+  const selected = parks.find((p) => p.rank === selectedRank) ?? parks[0] ?? null;
+
+  const toggleTag = (tag: ParkTag) => {
+    setSelectedRank(null);
+    setTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  };
 
   return (
     <LightShell>
@@ -39,14 +61,17 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
         <View className="flex-row justify-between items-start py-1 pb-[14px]">
           <View>
             <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
-              AI 추천
+              내 주변 공원
             </Text>
             <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>
               오늘의 추천 코스
             </Text>
           </View>
           <Pressable
-            onPress={() => setRefreshKey((k) => k + 1)}
+            onPress={() => {
+              setSelectedRank(null);
+              setRefreshKey((k) => k + 1);
+            }}
             className="w-9 h-9 rounded-[12px] items-center justify-center"
             style={{
               backgroundColor: 'rgba(255,255,255,0.7)',
@@ -62,33 +87,136 @@ export const CourseScreen = (_props: TabScreenProps<'Course'>) => {
         </View>
 
         <AirQualityCard location={location} />
-        <MapCard />
+        <ParkMap location={location} parks={parks} selected={selected} onSelect={(p) => setSelectedRank(p.rank)} />
 
         <View className="flex-row justify-between items-baseline mt-[18px] mb-[10px]" style={{ zIndex: 20 }}>
           <View className="flex-row items-baseline gap-[6px]">
-            <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>추천 코스</Text>
-            <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>{sortedCourses.length}개</Text>
+            <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>추천 공원</Text>
+            <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>
+              {loading ? '찾는 중' : `${parks.length}곳`}
+            </Text>
           </View>
           <CourseSortDropdown value={courseSort} onChange={setCourseSort} />
         </View>
 
-        {sortedCourses.map((c, i) => (
-          <CourseCard
-            key={c.name}
-            rank={i + 1}
-            name={c.name}
-            desc={c.desc}
-            score={c.score}
-            best={c.score === maxScore}
-          />
-        ))}
+        <TagFilter selected={tags} onToggle={toggleTag} />
 
+        {loading ? (
+          <StatusCard>
+            <ActivityIndicator color="#7c3aed" />
+            <Text className="text-[12px] font-medium mt-2" style={{ color: '#9b8cc5' }}>
+              주변 공원을 찾고 있어요...
+            </Text>
+          </StatusCard>
+        ) : error ? (
+          <StatusCard>
+            <Text className="text-[13px] font-medium" style={{ color: '#ef4444' }}>{error}</Text>
+            <Pressable onPress={() => setRefreshKey((k) => k + 1)} hitSlop={8} className="mt-2">
+              <Text className="text-[12px] font-bold text-purple-500">다시 시도</Text>
+            </Pressable>
+          </StatusCard>
+        ) : parks.length === 0 ? (
+          <StatusCard>
+            <Text className="text-[13px] font-semibold" style={{ color: '#1e1b4b' }}>
+              조건에 맞는 공원이 없어요
+            </Text>
+            <Text className="text-[11px] font-medium mt-1 text-center" style={{ color: '#9b8cc5' }}>
+              {tags.length
+                ? '시설 정보가 없는 공원이 많아요. 필터를 줄여보세요.'
+                : '근처에 면적 1만㎡ 이상인 공원이 없어요.'}
+            </Text>
+            {tags.length > 0 && (
+              <Pressable onPress={() => setTags([])} hitSlop={8} className="mt-2">
+                <Text className="text-[12px] font-bold text-purple-500">필터 초기화</Text>
+              </Pressable>
+            )}
+          </StatusCard>
+        ) : (
+          sortedParks.map((park) => (
+            <ParkCard
+              key={`${park.rank}-${park.name}`}
+              park={park}
+              nearest={park.rank === 1}
+              selected={park.rank === selected?.rank}
+              onPress={() => setSelectedRank(park.rank)}
+              onDirections={() => openDirections(park)}
+              onStart={() => navigation.navigate('RunSetup')}
+            />
+          ))
+        )}
+
+        {location.isFallback && location.ready && (
+          <Text className="text-[10px] text-center mt-1 font-medium" style={{ color: '#9b8cc5' }}>
+            위치를 확인하지 못해 기본 위치({location.name}) 기준으로 추천했어요.
+          </Text>
+        )}
       </ScrollView>
     </LightShell>
   );
 };
 
-// 코스 정렬 드롭다운 — 추천순(점수) / 이름순
+// 기기 지도 앱으로 공원 위치를 연다 (안드로이드 geo: 인텐트 / iOS 지도).
+const openDirections = (park: ParkResponseDto) => {
+  const { latitude: lat, longitude: lon, name } = park;
+  const label = encodeURIComponent(name);
+  const url =
+    Platform.OS === 'ios'
+      ? `maps:?q=${label}&ll=${lat},${lon}`
+      : `geo:${lat},${lon}?q=${lat},${lon}(${label})`;
+  Linking.openURL(url).catch(() => {
+    Alert.alert('지도를 열 수 없어요', '기기에 지도 앱이 설치돼 있는지 확인해주세요.');
+  });
+};
+
+/** 거리(km) → '420m' / '1.2km' */
+const fmtDistance = (km: number): string => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`);
+
+/** 면적(㎡) → '1.2만㎡' / '8,500㎡' */
+const fmtArea = (area: number | null): string => {
+  if (area == null) return '정보 없음';
+  return area >= 10000 ? `${(area / 10000).toFixed(1)}만㎡` : `${Math.round(area).toLocaleString()}㎡`;
+};
+
+const StatusCard = ({ children }: { children: ReactNode }) => (
+  <View
+    className="rounded-[16px] py-6 px-4 mb-[10px] items-center justify-center"
+    style={{ backgroundColor: 'rgba(255,255,255,0.78)', borderWidth: 0.5, borderColor: 'rgba(124,58,237,0.12)' }}
+  >
+    {children}
+  </View>
+);
+
+// 시설 태그 필터 — 고른 시설을 모두 갖춘 공원만 서버가 돌려준다.
+const TagFilter = ({ selected, onToggle }: { selected: ParkTag[]; onToggle: (tag: ParkTag) => void }) => (
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    className="mb-[10px] -mx-[18px]"
+    contentContainerStyle={{ paddingHorizontal: 18, gap: 6 }}
+  >
+    {PARK_TAGS.map((tag) => {
+      const on = selected.includes(tag);
+      return (
+        <Pressable
+          key={tag}
+          onPress={() => onToggle(tag)}
+          className="px-[11px] py-[6px] rounded-full"
+          style={{
+            backgroundColor: on ? '#7c3aed' : 'rgba(255,255,255,0.78)',
+            borderWidth: 0.5,
+            borderColor: on ? '#7c3aed' : 'rgba(124,58,237,0.18)',
+          }}
+        >
+          <Text className="text-[11px] font-semibold" style={{ color: on ? '#fff' : '#6b5ca5' }}>
+            {tag}
+          </Text>
+        </Pressable>
+      );
+    })}
+  </ScrollView>
+);
+
+// 코스 정렬 드롭다운 — 거리순(서버 순위) / 넓은순 / 이름순
 const CourseSortDropdown = ({
   value,
   onChange,
@@ -122,7 +250,7 @@ const CourseSortDropdown = ({
             shadowOffset: { width: 0, height: 4 },
           }}
         >
-          {(['score', 'name'] as CourseSort[]).map((k) => (
+          {(Object.keys(COURSE_SORT_LABELS) as CourseSort[]).map((k) => (
             <Pressable
               key={k}
               onPress={() => {
@@ -142,9 +270,6 @@ const CourseSortDropdown = ({
   );
 };
 
-/** 대기질 조회 실패 시 다시 시도하기까지의 간격(ms) */
-const AIR_RETRY_MS = 20000;
-
 /** 대기질 카드 표시값 */
 interface AirDisplay {
   value: string;
@@ -152,23 +277,20 @@ interface AirDisplay {
   grade: string;
 }
 
-// 에어코리아 응답 → 카드 표시값(수치·등급 라벨).
-const toAirDisplay = (air: AirQualityItem): AirDisplay => {
-  // 초미세먼지(PM2.5)가 통신 장애·점검으로 '-' 로 올 경우 미세먼지(PM10) 값으로 대체한다.
-  let value = air.pm25Value;
-  if (!value || value === '-') {
-    value = air.pm10Value && air.pm10Value !== '-' ? air.pm10Value : '-';
-  }
+// 대기질 응답 → 카드 표시값(수치·등급 라벨).
+const toAirDisplay = (air: AirQualityResponseDto): AirDisplay => {
+  // 초미세먼지(PM2.5)가 통신 장애·점검으로 비어 올 경우 미세먼지(PM10) 값으로 대체한다.
+  const numeric = air.pm25Value ?? air.pm10Value ?? null;
+  const value = numeric === null ? '-' : String(Math.round(numeric));
 
-  const numeric = parseInt(value, 10);
   let grade: string;
-  if (!isNaN(numeric)) {
+  if (numeric !== null) {
     if (numeric <= 15) grade = '1';
     else if (numeric <= 35) grade = '2';
     else if (numeric <= 75) grade = '3';
     else grade = '4';
   } else {
-    // 수치가 숫자가 아닐 때는 API 가 준 등급을 쓴다.
+    // 수치가 없을 때는 API 가 준 등급을 쓴다.
     grade = air.pm25Grade || air.khaiGrade || '2';
   }
 
@@ -178,68 +300,17 @@ const toAirDisplay = (air: AirQualityItem): AirDisplay => {
 };
 
 const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
-  const [weatherItems, setWeatherItems] = useState<WeatherItem[]>([]);
-  const [condition, setCondition] = useState<WeatherCondition>('sunny');
-  const [airData, setAirData] = useState<AirDisplay | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { name: locationName } = location;
 
-  const { nx, ny, station, name: locationName, ready } = location;
+  // 날씨와 대기질은 백엔드에서 각각 따로 받아온다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
+  const { weather, loading, error } = useWeather(location);
+  const air = useAirQuality(location);
+  const airData = air ? toAirDisplay(air) : null;
 
-  // 날씨(기상청) — 격자(nx·ny)가 정해지면 곧바로 조회한다.
-  // 대기질(에어코리아)은 서버가 달라 따로 조회한다: 한쪽이 느리거나 죽어도 다른 쪽은 그대로 나온다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      const [weatherRes, skyRes] = await Promise.allSettled([
-        fetchWeatherData(nx, ny),
-        fetchSkyCode(nx, ny),
-      ]);
-      if (cancelled) return;
-
-      if (weatherRes.status === 'fulfilled') {
-        setWeatherItems(weatherRes.value);
-        const sky = skyRes.status === 'fulfilled' ? skyRes.value : undefined;
-        setCondition(deriveWeatherCondition(findPty(weatherRes.value), sky));
-      } else {
-        setError('날씨 정보를 불러오지 못했어요.');
-      }
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, nx, ny]);
-
-  // 대기질(에어코리아) — 측정소가 정해지면 조회. 실패해도 날씨 표시에는 영향을 주지 않는다.
-  // 서버 혼잡(504)이 잦아, 실패하면 직전 값을 유지한 채 잠시 뒤 한 번 더 시도한다.
-  useEffect(() => {
-    if (!ready) return;
-
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-    const load = () => {
-      fetchAirQualityData(station)
-        .then((air) => {
-          if (!cancelled && air) setAirData(toAirDisplay(air));
-        })
-        .catch(() => {
-          if (!cancelled) retryTimer = setTimeout(load, AIR_RETRY_MS);
-        });
-    };
-    load();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [ready, station]);
+  const condition = deriveWeatherCondition(
+    weather?.precipitationType ?? undefined,
+    weather?.skyCondition ?? undefined,
+  );
 
   if (loading) {
     return (
@@ -258,8 +329,8 @@ const AirQualityCard = ({ location }: { location: ResolvedLocation }) => {
     );
   }
 
-  const temp = weatherItems.find((i) => i.category === 'T1H')?.obsrValue ?? '18';
-  const humidity = weatherItems.find((i) => i.category === 'REH')?.obsrValue ?? '48';
+  const temp = weather?.temperature ?? 18;
+  const humidity = weather?.humidity ?? 48;
 
   // 대기질 조회 실패(에어코리아 점검·일시 오류) 시 '--' 로 표시한다.
   const airValue = airData?.value ?? '--';
@@ -389,163 +460,278 @@ const MiniWeather = ({ icon, label, value }: { icon: string; label: string; valu
   </View>
 );
 
-const MapCard = () => (
-  <View
-    className="rounded-[18px] overflow-hidden h-[180px]"
-    style={{
-      borderWidth: 1.5,
-      borderColor: 'rgba(124,58,237,0.32)',
-    }}
-  >
-    <LinearGradient
-      colors={['#e0e7ff', '#ddd6fe', '#e0f2fe']}
-      locations={[0, 0.5, 1]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={{ flex: 1 }}
-    >
-      <Svg width="100%" height="100%" viewBox="0 0 380 180" preserveAspectRatio="xMidYMid slice">
-        <Path d="M 0 60 Q 100 80 200 50 T 380 70" stroke="rgba(255,255,255,0.7)" strokeWidth={6} fill="none" />
-        <Path d="M 0 120 Q 80 100 180 130 T 380 110" stroke="rgba(255,255,255,0.5)" strokeWidth={4} fill="none" />
-        <Path d="M 80 0 Q 100 80 90 180" stroke="rgba(255,255,255,0.5)" strokeWidth={4} fill="none" />
-        <Path d="M 240 0 Q 230 90 250 180" stroke="rgba(255,255,255,0.5)" strokeWidth={4} fill="none" />
-        <Path
-          d="M 0 30 Q 100 20 200 35 T 380 25 L 380 50 Q 280 60 180 50 T 0 55 Z"
-          fill="rgba(96,165,250,0.4)"
-        />
-        <Ellipse cx={120} cy={130} rx={40} ry={22} fill="rgba(16,185,129,0.25)" />
-        <Ellipse cx={290} cy={140} rx={50} ry={28} fill="rgba(16,185,129,0.2)" />
-        <Path d="M 60 90 Q 120 75 180 85 T 320 100" stroke="#7c3aed" strokeWidth={3} strokeDasharray="6 4" fill="none" strokeLinecap="round" />
-        <Circle cx={60} cy={90} r={8} fill="#fff" />
-        <Circle cx={60} cy={90} r={5} fill="#10b981" />
-        <Circle cx={320} cy={100} r={8} fill="#fff" />
-        <Circle cx={320} cy={100} r={5} fill="#ef4444" />
-      </Svg>
+// ─── 지도 ─────────────────────────────────────────────────────────
+// 지도 SDK(API 키) 없이, 내 위치를 중심으로 추천 공원의 실제 방향·거리를 찍는 약식 지도.
+// 위경도 차이를 km 로 바꿔(경도는 위도에 따라 cos 보정) 같은 축척으로 그린다.
 
-      <View className="absolute top-[10px] right-[10px] gap-1">
-        <View
-          className="w-8 h-8 rounded-[10px] items-center justify-center"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.95)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(124,58,237,0.18)',
-          }}
-        >
-          <Text className="text-purple-500 text-base font-bold">+</Text>
-        </View>
-        <View
-          className="w-8 h-8 rounded-[10px] items-center justify-center"
-          style={{
-            backgroundColor: 'rgba(255,255,255,0.95)',
-            borderWidth: 0.5,
-            borderColor: 'rgba(124,58,237,0.18)',
-          }}
-        >
-          <Text className="text-purple-500 text-base font-bold">−</Text>
-        </View>
-      </View>
+const MAP_W = 340;
+const MAP_H = 180;
+const MAP_PAD_X = 26;
+const MAP_PAD_Y = 14;
+/** 왼쪽 아래 위치 라벨이 차지하는 높이 — 핀이 라벨에 가리지 않도록 지도 중심을 그만큼 올린다 */
+const MAP_LABEL_H = 34;
+/** 거리 눈금 후보(km) — 지도에 들어가는 것 중 바깥 두 개만 그린다 */
+const RING_STEPS_KM = [0.25, 0.5, 1, 2, 3, 5, 10, 20];
 
-      <View
-        className="absolute bottom-[10px] left-[10px] rounded-[10px] px-[10px] py-[6px] flex-row items-center gap-[5px]"
-        style={{
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          borderWidth: 0.5,
-          borderColor: 'rgba(124,58,237,0.14)',
-        }}
-      >
-        <Svg width={11} height={11} viewBox="0 0 24 24" fill="none">
-          <Path
-            d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"
-            stroke="#7c3aed"
-            strokeWidth={2.4}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <Circle cx={12} cy={9} r={2.5} stroke="#7c3aed" strokeWidth={2.4} />
-        </Svg>
-        <Text className="text-[10px] text-purple-500 font-bold">kakao map</Text>
-      </View>
-    </LinearGradient>
-  </View>
-);
+const toLocalKm = (lat0: number, lon0: number, lat: number, lon: number) => ({
+  x: (lon - lon0) * 111.32 * Math.cos((lat0 * Math.PI) / 180),
+  y: (lat - lat0) * 110.57,
+});
 
-interface CourseCardProps {
-  rank: number;
-  name: string;
-  desc: string;
-  score: number;
-  best?: boolean;
+interface ParkMapProps {
+  location: ResolvedLocation;
+  parks: ParkResponseDto[];
+  selected: ParkResponseDto | null;
+  onSelect: (park: ParkResponseDto) => void;
 }
 
-const CourseCard = ({ rank, name, desc, score, best }: CourseCardProps) => (
-  <View
-    className="rounded-[16px] py-[14px] px-4 mb-[10px] relative overflow-hidden"
-    style={{
-      backgroundColor: 'rgba(255,255,255,0.78)',
-      borderWidth: 0.5,
-      borderColor: best ? 'rgba(124,58,237,0.28)' : 'rgba(124,58,237,0.12)',
-    }}
-  >
-    {best && (
+const ParkMap = ({ location, parks, selected, onSelect }: ParkMapProps) => {
+  const cx = MAP_W / 2;
+  const cy = (MAP_H - MAP_LABEL_H) / 2;
+  const points = parks.map((p) => ({ park: p, ...toLocalKm(location.lat, location.lon, p.latitude, p.longitude) }));
+
+  // 가장 먼 공원이 테두리 안쪽에 들어오도록 가로·세로 중 빡빡한 쪽에 축척을 맞춘다.
+  const maxX = Math.max(0.2, ...points.map((p) => Math.abs(p.x)));
+  const maxY = Math.max(0.2, ...points.map((p) => Math.abs(p.y)));
+  const pxPerKm = Math.min((cx - MAP_PAD_X) / maxX, (cy - MAP_PAD_Y) / maxY);
+  const toPx = (x: number, y: number) => ({ px: cx + x * pxPerKm, py: cy - y * pxPerKm });
+
+  // 눈금 원은 라벨(원의 위쪽)이 보이도록 세로 안에 들어오는 것만 그린다.
+  const rings = RING_STEPS_KM.filter((km) => km * pxPerKm <= cy - 4).slice(-2);
+  const sel = selected ? points.find((p) => p.park.rank === selected.rank) : undefined;
+  const selPx = sel ? toPx(sel.x, sel.y) : null;
+
+  return (
+    <View
+      className="rounded-[18px] overflow-hidden h-[180px]"
+      style={{
+        borderWidth: 1.5,
+        borderColor: 'rgba(124,58,237,0.32)',
+      }}
+    >
       <LinearGradient
-        colors={['#7c3aed', '#6d28d9', '#3b82f6']}
+        colors={['#e0e7ff', '#ddd6fe', '#e0f2fe']}
+        locations={[0, 0.5, 1]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={{ position: 'absolute', left: 0, top: 14, bottom: 14, width: 4, borderRadius: 4 }}
-      />
-    )}
-    <View className="flex-row justify-between items-start gap-[10px]">
-      <View className="flex-1">
-        <View className="flex-row items-center gap-2 mb-1 flex-wrap">
-          <Text className="text-[10px] font-bold tracking-[0.6px]" style={{ color: '#9b8cc5' }}>#{rank}</Text>
-          {best && (
+        end={{ x: 1, y: 1 }}
+        style={{ flex: 1 }}
+      >
+        <Svg width="100%" height="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} preserveAspectRatio="xMidYMid meet">
+          {/* 거리 눈금 */}
+          {rings.map((km) => (
+            <G key={km}>
+              <Circle
+                cx={cx}
+                cy={cy}
+                r={km * pxPerKm}
+                stroke="rgba(124,58,237,0.22)"
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                fill="none"
+              />
+              <SvgText x={cx + 4} y={cy - km * pxPerKm + 11} fontSize={9} fontWeight="600" fill="rgba(107,92,165,0.75)">
+                {km < 1 ? `${km * 1000}m` : `${km}km`}
+              </SvgText>
+            </G>
+          ))}
+          {/* 북쪽 표시 */}
+          <SvgText x={MAP_W - 16} y={16} fontSize={10} fontWeight="700" fill="rgba(107,92,165,0.7)" textAnchor="middle">
+            N
+          </SvgText>
+
+          {/* 내 위치 → 선택 공원 */}
+          {selPx && (
+            <Line
+              x1={cx}
+              y1={cy}
+              x2={selPx.px}
+              y2={selPx.py}
+              stroke="#7c3aed"
+              strokeWidth={2.5}
+              strokeDasharray="6 4"
+              strokeLinecap="round"
+            />
+          )}
+
+          {/* 내 위치 — 가까운 공원 핀이 가려지지 않도록 핀보다 먼저 그린다 */}
+          <Circle cx={cx} cy={cy} r={11} fill="rgba(59,130,246,0.2)" />
+          <Circle cx={cx} cy={cy} r={6} fill="#fff" />
+          <Circle cx={cx} cy={cy} r={4} fill="#3b82f6" />
+
+          {/* 공원 핀 — 탭하면 선택 (선택된 핀은 맨 위에) */}
+          {[...points]
+            .sort((a, b) => Number(a.park.rank === selected?.rank) - Number(b.park.rank === selected?.rank))
+            .map(({ park, x, y }) => {
+            const { px, py } = toPx(x, y);
+            const on = park.rank === selected?.rank;
+            return (
+              <G key={`${park.rank}-${park.name}`} onPress={() => onSelect(park)}>
+                <Circle cx={px} cy={py} r={on ? 12 : 10} fill="#fff" />
+                <Circle cx={px} cy={py} r={on ? 9 : 7.5} fill={on ? '#7c3aed' : '#10b981'} />
+                <SvgText x={px} y={py + 3.5} fontSize={on ? 10 : 9} fontWeight="700" fill="#fff" textAnchor="middle">
+                  {park.rank}
+                </SvgText>
+              </G>
+            );
+          })}
+
+        </Svg>
+
+        {parks.length === 0 && (
+          <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
+            <Text className="text-[11px] font-semibold mt-12" style={{ color: 'rgba(107,92,165,0.8)' }}>
+              {location.ready ? '표시할 공원이 없어요' : '위치 확인 중...'}
+            </Text>
+          </View>
+        )}
+
+        <View
+          className="absolute bottom-[10px] left-[10px] rounded-[10px] px-[10px] py-[6px] flex-row items-center gap-[5px]"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.14)',
+            maxWidth: '70%',
+          }}
+        >
+          <Svg width={11} height={11} viewBox="0 0 24 24" fill="none">
+            <Path
+              d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"
+              stroke="#7c3aed"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Circle cx={12} cy={9} r={2.5} stroke="#7c3aed" strokeWidth={2.4} />
+          </Svg>
+          <Text className="text-[10px] text-purple-500 font-bold" numberOfLines={1}>
+            {selected ? `${selected.name} · ${fmtDistance(selected.distanceKm)}` : location.name}
+          </Text>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+};
+
+// ─── 공원 카드 ────────────────────────────────────────────────────
+
+/** 카드에 바로 보여줄 시설 태그 수 — 나머지는 '+n' */
+const VISIBLE_TAGS = 4;
+
+interface ParkCardProps {
+  park: ParkResponseDto;
+  nearest: boolean;
+  selected: boolean;
+  onPress: () => void;
+  onDirections: () => void;
+  onStart: () => void;
+}
+
+const ParkCard = ({ park, nearest, selected, onPress, onDirections, onStart }: ParkCardProps) => {
+  const extraTags = park.tags.length - VISIBLE_TAGS;
+  return (
+    <Pressable
+      onPress={onPress}
+      className="rounded-[16px] py-[14px] px-4 mb-[10px] relative overflow-hidden"
+      style={{
+        backgroundColor: 'rgba(255,255,255,0.78)',
+        borderWidth: selected ? 1 : 0.5,
+        borderColor: selected ? 'rgba(124,58,237,0.45)' : 'rgba(124,58,237,0.12)',
+      }}
+    >
+      {selected && (
+        <LinearGradient
+          colors={['#7c3aed', '#6d28d9', '#3b82f6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={{ position: 'absolute', left: 0, top: 14, bottom: 14, width: 4, borderRadius: 4 }}
+        />
+      )}
+      <View className="flex-row justify-between items-start gap-[10px]">
+        <View className="flex-1">
+          <View className="flex-row items-center gap-2 mb-1 flex-wrap">
+            <Text className="text-[10px] font-bold tracking-[0.6px]" style={{ color: '#9b8cc5' }}>#{park.rank}</Text>
+            {nearest && (
+              <LinearGradient
+                colors={gradients.action}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 }}
+              >
+                <Text className="text-white text-[10px] font-bold">✦ 가장 가까움</Text>
+              </LinearGradient>
+            )}
+            {!!park.type && (
+              <Text className="text-[10px] font-semibold" style={{ color: '#7c6bb5' }}>{park.type}</Text>
+            )}
+          </View>
+          <Text className="text-[15px] font-bold tracking-[-0.3px]" style={{ color: '#1e1b4b' }}>{park.name}</Text>
+          {!!park.address && (
+            <Text className="text-[11px] mt-1 font-medium leading-[15px]" style={{ color: '#6b5ca5' }} numberOfLines={2}>
+              {park.address}
+            </Text>
+          )}
+        </View>
+
+        <View
+          className="rounded-full items-center justify-center bg-white"
+          style={{ width: 50, height: 50, flexShrink: 0, borderWidth: 3, borderColor: selected ? '#7c3aed' : '#3b82f6' }}
+        >
+          {/* 숫자와 단위를 나눠 써야 '1.6km' 같은 값도 원 안에 들어간다 */}
+          <Text className="text-[13px] font-bold tracking-[-0.4px] leading-[16px]" style={{ color: selected ? '#7c3aed' : '#3b82f6' }}>
+            {park.distanceKm < 1 ? Math.round(park.distanceKm * 1000) : park.distanceKm.toFixed(1)}
+          </Text>
+          <Text className="text-[9px] font-semibold leading-[11px]" style={{ color: '#9b8cc5' }}>
+            {park.distanceKm < 1 ? 'm' : 'km'}
+          </Text>
+        </View>
+      </View>
+
+      {park.tags.length > 0 && (
+        <View className="flex-row flex-wrap gap-1 mt-[10px]">
+          {park.tags.slice(0, VISIBLE_TAGS).map((tag) => (
+            <View key={tag} className="px-2 py-[2px] rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)' }}>
+              <Text className="text-[10px] font-semibold" style={{ color: '#059669' }}>{tag}</Text>
+            </View>
+          ))}
+          {extraTags > 0 && (
+            <View className="px-2 py-[2px] rounded-full" style={{ backgroundColor: 'rgba(124,58,237,0.08)' }}>
+              <Text className="text-[10px] font-semibold text-purple-500">+{extraTags}</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Stats row */}
+      <View
+        className="flex-row items-center gap-4 mt-[10px] pt-[10px]"
+        style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(124,58,237,0.14)', borderStyle: 'dashed' }}
+      >
+        <View>
+          <Text className="text-[9px] font-semibold" style={{ color: '#9b8cc5' }}>면적</Text>
+          <Text className="text-[12px] font-bold" style={{ color: '#1e1b4b' }}>{fmtArea(park.area)}</Text>
+        </View>
+        <View className="ml-auto flex-row gap-[6px]">
+          <Pressable
+            onPress={onDirections}
+            hitSlop={4}
+            className="px-3 py-[6px] rounded-full"
+            style={{ backgroundColor: 'rgba(124,58,237,0.08)' }}
+          >
+            <Text className="text-purple-500 text-[11px] font-bold">길찾기</Text>
+          </Pressable>
+          <Pressable onPress={onStart} hitSlop={4}>
             <LinearGradient
               colors={gradients.action}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, flexDirection: 'row', alignItems: 'center', gap: 3 }}
+              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}
             >
-              <Text className="text-white text-[10px] font-bold">✦ 최적</Text>
+              <Text className="text-white text-[11px] font-bold">러닝 시작 →</Text>
             </LinearGradient>
-          )}
+          </Pressable>
         </View>
-        <Text className="text-[15px] font-bold tracking-[-0.3px]" style={{ color: '#1e1b4b' }}>{name}</Text>
-        <Text className="text-[11px] mt-1 font-medium leading-[15px]" style={{ color: '#6b5ca5' }}>{desc}</Text>
       </View>
-
-      <View
-        className="w-[50px] h-[50px] rounded-full items-center justify-center bg-white"
-        style={{ borderWidth: 3, borderColor: best ? '#7c3aed' : '#3b82f6' }}
-      >
-        <Text className="text-[14px] font-bold tracking-[-0.28px]" style={{ color: best ? '#7c3aed' : '#3b82f6' }}>{score}</Text>
-        <Text className="text-[7px] font-semibold" style={{ color: '#9b8cc5' }}>점</Text>
-      </View>
-    </View>
-
-    {/* Stats row */}
-    <View
-      className="flex-row gap-4 mt-[10px] pt-[10px]"
-      style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(124,58,237,0.14)', borderStyle: 'dashed' }}
-    >
-      <View className="ml-auto justify-center">
-        {best ? (
-          <LinearGradient
-            colors={gradients.action}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 }}
-          >
-            <Text className="text-white text-[11px] font-bold">시작 →</Text>
-          </LinearGradient>
-        ) : (
-          <View
-            className="px-3 py-[6px] rounded-full"
-            style={{ backgroundColor: 'rgba(124,58,237,0.08)' }}
-          >
-            <Text className="text-purple-500 text-[11px] font-bold">시작 →</Text>
-          </View>
-        )}
-      </View>
-    </View>
-  </View>
-);
+    </Pressable>
+  );
+};

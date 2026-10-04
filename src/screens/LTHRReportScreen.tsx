@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Defs, Line, LinearGradient as SvgGradient, Path, Polyline, Rect, Stop } from 'react-native-svg';
 
+import { createLthrRecord } from '@/api';
 import { createLthrCoaching } from '@/api/ai';
 import { DarkNavHeader, DarkShell, RSButton } from '@/components/domain';
+import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { MEASURE_START_SECONDS, TEST_SECONDS, fmtClock } from '@/utils/lthr';
+import { numberToField } from '@/utils/profile';
 
+import type { LthrRecordResponseDto } from '@/types/api';
 import type { ScreenProps } from '@/types/navigation';
-
-const DEFAULT_LTHR = 162;
 
 const ZONE_COLORS: Record<string, string> = {
   Z1: '#93c5fd',
@@ -19,15 +22,41 @@ const ZONE_COLORS: Record<string, string> = {
   Z5: '#f87171',
 };
 
-export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'>) => {
-  const { result, coachingAnalysis: initialCoaching, samples: routeSamples } = route.params ?? {};
+type SaveStatus = 'saving' | 'saved' | 'failed' | 'guest';
 
+const SAVE_LABELS: Record<SaveStatus, string> = {
+  saving: '저장 중…',
+  saved: '✓ 자동 적용됨',
+  failed: '저장 실패 · 다시 시도',
+  guest: '로그인하면 저장돼요',
+};
+
+/** ISO → 'YYYY.MM.DD' */
+const fmtDate = (iso: string): string => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'>) => {
+  const {
+    result,
+    coachingAnalysis: initialCoaching,
+    samples,
+    restingHeartRate,
+    testSeconds,
+    finishedAt,
+    simulated,
+  } = route.params;
+
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setProfile = useProfileStore((s) => s.setProfile);
   const [coaching, setCoaching] = useState<string | undefined>(initialCoaching);
   const [isLoadingCoaching, setIsLoadingCoaching] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(isAuthenticated ? 'saving' : 'guest');
+  const [record, setRecord] = useState<LthrRecordResponseDto | null>(null);
 
   useEffect(() => {
-    if (!coaching && result) {
+    if (!coaching) {
       let isMounted = true;
       setIsLoadingCoaching(true);
       createLthrCoaching(result)
@@ -37,7 +66,7 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
           }
         })
         .catch(() => {
-          // fallback
+          // 코칭 문장이 없으면 안내 문구만 보여준다.
         })
         .finally(() => {
           if (isMounted) setIsLoadingCoaching(false);
@@ -48,62 +77,62 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
     }
   }, [coaching, result]);
 
-  const lthr = result?.lthr ?? DEFAULT_LTHR;
-  const prevLthr = result?.previousLthr ?? (result ? null : 158);
-  const lthrDiff = result?.lthrDifference ?? (result ? null : 4);
-  const maxHr = result?.maxHeartRate ?? 174;
-  const avgHr = result?.averageHeartRate ?? 158;
+  // 결과 화면에 들어오면 바로 기록을 저장한다 — POST /api/lthr.
+  // 서버가 기록을 쌓으면서 프로필의 LTHR·안정시 심박수도 갱신하므로, 성공하면 기기 캐시(→ 심박존·워치)도 맞춘다.
+  const save = useCallback(() => {
+    setSaveStatus('saving');
+    createLthrRecord({
+      lthr: Math.round(result.lthr),
+      restingHeartRate,
+      maxHeartRate: Math.round(result.maxHeartRate),
+      averageHeartRate: result.averageHeartRate,
+    })
+      .then((saved) => {
+        setRecord(saved);
+        setSaveStatus('saved');
+        setProfile({
+          lthr: String(saved.lthr),
+          restingHr: numberToField(saved.restingHeartRate),
+        });
+      })
+      .catch(() => setSaveStatus('failed'));
+  }, [result, restingHeartRate, setProfile]);
 
-  const defaultSamples = useMemo(() => {
-    const arr: number[] = [];
-    for (let i = 0; i < 60; i++) {
-      const t = i / 59;
-      let v;
-      if (t < 0.33) v = 132 + t * 3 * 28;
-      else if (t < 0.66) v = 158 + (t - 0.33) * 3 * 6;
-      else v = 162 + (t - 0.66) * 3 * 6;
-      v += (Math.sin(i * 1.6) + Math.cos(i * 0.9)) * 1.6;
-      arr.push(Math.round(v));
-    }
-    return arr;
-  }, []);
+  const savedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!isAuthenticated || savedOnceRef.current) return;
+    savedOnceRef.current = true;
+    save();
+  }, [isAuthenticated, save]);
 
-  const samples = routeSamples && routeSamples.length > 0 ? routeSamples : defaultSamples;
+  const lthr = Math.round(result.lthr);
+  // 직전 측정 대비 증감은 서버 기록(마지막 테스트 기준)을 따르고, 저장 전에는 분석 결과(프로필 LTHR 기준)를 보여준다.
+  const prevLthr = record ? record.previousLthr : result.previousLthr;
+  const lthrDiff = record ? record.lthrDifference : result.lthrDifference;
+  const maxHr = Math.round(result.maxHeartRate);
+  const avgHr = Math.round(result.averageHeartRate);
 
-  const zones = useMemo(() => {
-    if (result?.zones && result.zones.length > 0) {
-      return result.zones.map((z, idx) => {
-        const color = ZONE_COLORS[z.zone] ?? '#a78bfa';
+  const zones = useMemo(
+    () =>
+      result.zones.map((z, idx) => {
         let rangeText = '';
         if (z.minBpm != null && z.maxBpm != null) {
           rangeText = `${z.minBpm}–${z.maxBpm}`;
         } else if (z.minBpm != null) {
           rangeText = `≥ ${z.minBpm}`;
         } else if (z.maxBpm != null) {
-          rangeText = `< ${z.maxBpm}`;
+          rangeText = `≤ ${z.maxBpm}`;
         }
         return {
           id: idx + 1,
           label: `${z.zone} ${z.name}`,
           range: rangeText,
-          c: color,
+          c: ZONE_COLORS[z.zone] ?? '#a78bfa',
           pct: Math.round(z.percentage),
         };
-      });
-    }
-    return [
-      { id: 1, label: 'Z1 회복', range: `< ${Math.round(lthr * 0.81)}`, c: '#93c5fd', pct: 8 },
-      { id: 2, label: 'Z2 유산소', range: `${Math.round(lthr * 0.81)}–${Math.round(lthr * 0.89) - 1}`, c: '#6ee7b7', pct: 22 },
-      { id: 3, label: 'Z3 템포', range: `${Math.round(lthr * 0.89)}–${Math.round(lthr * 0.94) - 1}`, c: '#a78bfa', pct: 26 },
-      { id: 4, label: 'Z4 역치', range: `${Math.round(lthr * 0.94)}–${lthr - 1}`, c: '#fbbf24', pct: 32 },
-      { id: 5, label: 'Z5 무산소', range: `≥ ${lthr}`, c: '#f87171', pct: 12 },
-    ];
-  }, [result, lthr]);
-
-  const handleComplete = () => {
-    setProfile({ lthr: String(lthr) });
-    navigation.navigate('Main');
-  };
+      }),
+    [result],
+  );
 
   return (
     <DarkShell>
@@ -119,7 +148,26 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
       />
 
       <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
-        <DarkNavHeader title="LTHR 테스트 결과" sub="2026.05.17 · 30:00" onBack={() => navigation.goBack()} />
+        <DarkNavHeader
+          title="LTHR 테스트 결과"
+          sub={`${fmtDate(finishedAt)} · ${fmtClock(testSeconds)}`}
+          onBack={() => navigation.goBack()}
+        />
+
+        {simulated && (
+          <View
+            className="rounded-[12px] px-3 py-[9px] mb-3"
+            style={{
+              backgroundColor: 'rgba(251,191,36,0.1)',
+              borderWidth: 0.5,
+              borderColor: 'rgba(251,191,36,0.3)',
+            }}
+          >
+            <Text className="text-[11px] font-semibold leading-4" style={{ color: '#fde68a' }}>
+              워치 심박이 들어오지 않은 구간은 시뮬레이션 값으로 측정했어요. 정확한 LTHR을 위해 워치를 연결하고 다시 측정하세요.
+            </Text>
+          </View>
+        )}
 
         {/* HERO RESULT */}
         <LinearGradient
@@ -213,7 +261,9 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
           <Text className="text-[10px] text-purple-300 font-bold tracking-[0.8px] uppercase">
             심박 추이
           </Text>
-          <Text className="text-[11px] mt-[2px] font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>30분간 (1샘플/30초)</Text>
+          <Text className="text-[11px] mt-[2px] font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>
+            {fmtClock(testSeconds)} · 30초 평균 · 음영은 측정 구간
+          </Text>
           <View className="mt-[10px]">
             <HRLineChart samples={samples} lthr={lthr} />
           </View>
@@ -221,6 +271,7 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
 
         {/* Stats grid */}
         <View className="flex-row gap-2 mb-3">
+          <ReportStat label="안정 심박" value={numberToField(restingHeartRate) || '--'} unit="bpm" color="#93c5fd" />
           <ReportStat label="최고 심박" value={String(maxHr)} unit="bpm" color="#f87171" />
           <ReportStat label="평균 심박" value={String(avgHr)} unit="bpm" color="#a78bfa" />
         </View>
@@ -238,14 +289,30 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
             <Text className="text-[10px] text-purple-300 font-bold tracking-[0.8px] uppercase">
               새 트레이닝 존
             </Text>
-            <Text className="text-[10px] text-good font-bold">✓ 자동 적용됨</Text>
+            <Pressable onPress={save} disabled={saveStatus !== 'failed'} hitSlop={8}>
+              <Text
+                className="text-[10px] font-bold"
+                style={{
+                  color:
+                    saveStatus === 'saved'
+                      ? '#6ee7b7'
+                      : saveStatus === 'failed'
+                        ? '#fca5a5'
+                        : 'rgba(221,214,254,0.6)',
+                }}
+              >
+                {SAVE_LABELS[saveStatus]}
+              </Text>
+            </Pressable>
           </View>
 
-          <View className="flex-row h-[10px] rounded-full overflow-hidden mb-3">
-            {zones.map((z) => (
-              <View key={z.id} style={{ flex: z.pct, backgroundColor: z.c, opacity: 0.85 }} />
-            ))}
-          </View>
+          {zones.some((z) => z.pct > 0) && (
+            <View className="flex-row h-[10px] rounded-full overflow-hidden mb-3">
+              {zones.map((z) => (
+                <View key={z.id} style={{ flex: z.pct, backgroundColor: z.c, opacity: 0.85 }} />
+              ))}
+            </View>
+          )}
 
           {zones.map((z, i) => (
             <View
@@ -298,16 +365,10 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
           <View className="flex-1">
             <Text className="text-[11px] text-purple-200 font-bold tracking-[0.4px]">AI 코치 분석</Text>
             <Text className="text-[13px] text-white leading-5 mt-[6px] font-medium">
-              {coaching ? (
-                coaching
-              ) : isLoadingCoaching ? (
-                'AI 코치가 LTHR 테스트 결과를 분석하고 있습니다...'
-              ) : (
-                <>
-                  지난 측정 대비 <Text className="text-good font-bold">유산소 능력이 향상</Text>됐어요. 다음 주는 Z3 템포
-                  러닝을 주 2회로 늘려보세요.
-                </>
-              )}
+              {coaching ??
+                (isLoadingCoaching
+                  ? 'AI 코치가 LTHR 테스트 결과를 분석하고 있습니다...'
+                  : 'AI 코치 분석을 불러오지 못했어요. 새 트레이닝 존은 그대로 적용됩니다.')}
             </Text>
           </View>
         </LinearGradient>
@@ -315,10 +376,10 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
         {/* Actions */}
         <View className="flex-row gap-2">
           <View className="flex-1">
-            <RSButton variant="ghost" label="다시 측정" onPress={() => navigation.goBack()} />
+            <RSButton variant="ghost" label="다시 측정" onPress={() => navigation.replace('LTHRTest')} />
           </View>
           <View className="flex-1">
-            <RSButton variant="primary" label="완료" onPress={handleComplete} />
+            <RSButton variant="primary" label="완료" onPress={() => navigation.navigate('Main')} />
           </View>
         </View>
       </ScrollView>
@@ -335,14 +396,27 @@ const HRLineChart = ({ samples, lthr }: HRLineChartProps) => {
   const W = 320,
     H = 120,
     P = 6;
-  const minHR = 120,
-    maxHR = 180;
+  if (samples.length < 2) {
+    return (
+      <View style={{ height: H }} className="items-center justify-center">
+        <Text className="text-[11px] font-medium" style={{ color: 'rgba(221,214,254,0.5)' }}>
+          심박 샘플이 부족해요
+        </Text>
+      </View>
+    );
+  }
+  // 세로 범위는 실제 샘플과 LTHR 이 모두 들어오도록 잡는다.
+  const minHR = Math.floor(Math.min(...samples, lthr) / 10) * 10 - 5;
+  const maxHR = Math.ceil(Math.max(...samples, lthr) / 10) * 10 + 5;
   const xStep = (W - P * 2) / (samples.length - 1);
   const y = (v: number) => H - P - ((v - minHR) / (maxHR - minHR)) * (H - P * 2);
   const pts = samples.map((v, i) => [P + i * xStep, y(v)] as const);
   const path = pts.map(([x, yy], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${yy.toFixed(1)}`).join(' ');
   const area = `${path} L${W - P} ${H - P} L${P} ${H - P} Z`;
   const lthrY = y(lthr);
+  // 측정 구간(후반 20분) 음영 — 30분 테스트 기준 위치
+  const measureX = P + (W - P * 2) * (MEASURE_START_SECONDS / TEST_SECONDS);
+  const grid = [120, 140, 160, 180].filter((g) => g > minHR && g < maxHR);
 
   return (
     <Svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}>
@@ -352,10 +426,10 @@ const HRLineChart = ({ samples, lthr }: HRLineChartProps) => {
           <Stop offset="100%" stopColor="#a78bfa" stopOpacity={0} />
         </SvgGradient>
       </Defs>
-      {[140, 160].map((g) => (
+      {grid.map((g) => (
         <Line key={g} x1={P} y1={y(g)} x2={W - P} y2={y(g)} stroke="rgba(167,139,250,0.1)" strokeWidth={0.5} />
       ))}
-      <Rect x={P + (W - P * 2) / 3} y={P} width={((W - P * 2) * 2) / 3} height={H - P * 2} fill="rgba(167,139,250,0.06)" />
+      <Rect x={measureX} y={P} width={W - P - measureX} height={H - P * 2} fill="rgba(167,139,250,0.06)" />
       <Line x1={P} y1={lthrY} x2={W - P} y2={lthrY} stroke="#fbbf24" strokeWidth={1} strokeDasharray="3 3" />
       <Path d={area} fill="url(#lthr-rep-fill)" />
       <Path d={path} fill="none" stroke="#a78bfa" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />

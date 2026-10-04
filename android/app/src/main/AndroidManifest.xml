@@ -32,5 +32,18 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- 갤럭시 워치(RunSense 워치 앱)가 보내는 Data Layer 메시지 수신 -->
+      <service
+        android:name=".wear.WearListenerService"
+        android:exported="true">
+        <intent-filter>
+          <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+          <data
+            android:host="*"
+            android:pathPrefix="/runsense"
+            android:scheme="wear" />
+        </intent-filter>
+      </service>
     </application>
 </manifest>

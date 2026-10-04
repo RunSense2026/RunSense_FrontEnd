@@ -4,11 +4,14 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import type { AirQualityResponseDto, Gender } from '@/types/api';
+
 const K_ACCESS = 'auth.accessToken';
 const K_REFRESH = 'auth.refreshToken';
 const K_SESSION = 'auth.session';
 const K_REMEMBER = 'auth.remember';
-// 프로필(이름·이메일 + 신체 정보·사진) — 서버에 수정 API 가 없어 기기에만 보관한다.
+// 프로필 — 서버 값(이름·생년월일·성별·키·체중)의 오프라인 캐시 +
+// 서버에 저장 필드가 없는 값(안정시 심박수·LTHR·사진)의 유일한 보관처.
 const K_PROFILE = 'profile.prefs';
 const PERSIST_KEYS = [K_ACCESS, K_REFRESH, K_SESSION, K_REMEMBER];
 
@@ -21,6 +24,18 @@ const removePersisted = () => {
 let _accessToken: string | null = null;
 let _refreshToken: string | null = null;
 let _remember = false;
+
+// 토큰이 바뀔 때(로그인·재발급·로그아웃) 알림 — 워치 동기화(useWatchSync)가 구독한다.
+const tokenListeners = new Set<() => void>();
+const notifyTokens = () => tokenListeners.forEach((cb) => cb());
+
+/** 토큰 변경 구독. 반환된 함수로 해제한다. */
+export const onTokensChanged = (cb: () => void): (() => void) => {
+  tokenListeners.add(cb);
+  return () => {
+    tokenListeners.delete(cb);
+  };
+};
 
 export interface PersistedSession {
   userId: number;
@@ -62,6 +77,7 @@ export const setTokens = (access: string, refresh: string): void => {
     AsyncStorage.setItem(K_ACCESS, access).catch(() => {});
     AsyncStorage.setItem(K_REFRESH, refresh).catch(() => {});
   }
+  notifyTokens();
 };
 
 /** 로그아웃 시 메모리 + 영구 저장 모두 제거 */
@@ -70,6 +86,7 @@ export const clearTokens = (): void => {
   _refreshToken = null;
   _remember = false;
   removePersisted();
+  notifyTokens();
 };
 
 /** '로그인 유지' 여부 설정. 끄면 영구 저장된 토큰/세션을 제거한다. */
@@ -92,12 +109,18 @@ export const persistSession = (session: PersistedSession): void => {
 // ─── 프로필(신체 정보) ─────────────────────────────────────────────
 
 export interface PersistedProfile {
-  /** 사용자가 직접 고친 이름 (로그인 응답 값보다 우선) */
+  // 서버(PATCH /api/users) 값의 캐시 — 부팅 직후·오프라인 표시용이고, 서버 응답이 오면 덮어쓴다.
   name?: string;
-  /** 사용자가 직접 고친 이메일 (로그인 응답 값보다 우선) */
-  email?: string;
-  age?: string;
+  /** 생년월일 (YYYY-MM-DD) */
+  birthDate?: string;
+  /** 성별 코드 (M/F/ETC), 미설정이면 '' */
+  gender?: Gender | '';
+  /** 키 (cm) */
+  height?: string;
+  /** 체중 (kg) */
   weight?: string;
+
+  // 서버에 저장 필드가 없는 값 — 기기에만 남는다.
   /** 안정시 심박수 (bpm) */
   restingHr?: string;
   /** 젖산 역치 심박수 (bpm) */
@@ -123,6 +146,42 @@ export const loadPersistedProfile = async (): Promise<PersistedProfile | null> =
 /** 로그아웃 시 호출 — 다음 사용자에게 이전 사용자의 프로필이 남지 않게 지운다. */
 export const clearPersistedProfile = (): void => {
   AsyncStorage.removeItem(K_PROFILE).catch(() => {});
+};
+
+// ─── 대기질 캐시 ───────────────────────────────────────────────────
+// 에어코리아가 자주 혼잡해(504) 조회가 통째로 실패하는데, 값 자체는 시간 단위로만 갱신된다.
+// 마지막 성공값을 기기에 남겨 두면 앱을 다시 켠 직후 조회가 실패해도 카드가 비지 않는다.
+
+const K_AIR = 'air.lastGood';
+
+export interface CachedAirQuality {
+  /** 조회에 쓴 좌표 — 지금 위치와 너무 멀면 쓰지 않는다 */
+  lat: number;
+  lon: number;
+  /** 저장 시각 (epoch ms) */
+  savedAt: number;
+  /** 그대로 화면에 그릴 수 있는 응답 본문 */
+  air: AirQualityResponseDto;
+}
+
+/** 대기질 조회 성공 시 호출 — 로그인 여부와 무관하게 기기에 남긴다. */
+export const persistAirQuality = (cached: CachedAirQuality): void => {
+  AsyncStorage.setItem(K_AIR, JSON.stringify(cached)).catch(() => {});
+};
+
+/** 로그아웃 시 호출 — 캐시에 좌표가 들어 있으므로 다음 사용자에게 남기지 않는다. */
+export const clearPersistedAirQuality = (): void => {
+  AsyncStorage.removeItem(K_AIR).catch(() => {});
+};
+
+/** 마지막으로 성공한 대기질 값을 읽어온다. (없으면 null — 신선도·거리 판단은 호출부 몫) */
+export const loadPersistedAirQuality = async (): Promise<CachedAirQuality | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(K_AIR);
+    return raw ? (JSON.parse(raw) as CachedAirQuality) : null;
+  } catch {
+    return null;
+  }
 };
 
 /**

@@ -6,11 +6,13 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { LightShell, ProfileAvatar } from '@/components/domain';
-import { logout, readAllRuns } from '@/api';
+import { logout, readAllRuns, readMyProfile } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useInsoleStore } from '@/stores/insoleStore';
+import { useWatchStore } from '@/stores/watchStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { ageFromBirthDate, genderLabel } from '@/utils/profile';
 import { refreshToken } from '@/utils/storage';
 
 import type { TabScreenProps } from '@/types/navigation';
@@ -19,7 +21,9 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
   const {
     name,
     email,
-    age,
+    birthDate,
+    gender,
+    height,
     weight,
     restingHr,
     lthr,
@@ -28,21 +32,33 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
     runCount,
     totalDistanceKm,
     setStats,
+    applyServerProfile,
   } = useProfileStore();
   const clearSession = useAuthStore((s) => s.clearSession);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const insoleL = useInsoleStore((s) => s.L);
   const insoleR = useInsoleStore((s) => s.R);
-  // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(이름만, 항상 포함)
-  const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + 1;
+  // 연결된 기기 수: 왼/오른발 인솔 + Galaxy Watch(Data Layer 로 실제 연결 확인)
+  const watchConnected = useWatchStore((s) => s.connected);
+  const deviceCount = (insoleL.connected ? 1 : 0) + (insoleR.connected ? 1 : 0) + (watchConnected ? 1 : 0);
   const { notifications, distanceUnit, setNotifications, toggleDistanceUnit } = useSettingsStore();
   const [loggingOut, setLoggingOut] = useState(false);
+  // 서버는 생년월일만 저장하므로 나이는 화면에서 계산해 보여준다.
+  const age = String(ageFromBirthDate(birthDate) ?? '');
 
-  // 화면 진입 시 러닝 기록 합계(횟수·거리)를 최신값으로 갱신한다. (가입일은 로그인 응답값 유지)
+  // 화면 진입 시 서버 값으로 갱신한다 — 프로필(이름·신체 정보)과 러닝 기록 합계(횟수·거리).
   useFocusEffect(
     useCallback(() => {
       if (!isAuthenticated) return;
       let cancelled = false;
+      readMyProfile()
+        .then((user) => {
+          if (cancelled) return;
+          applyServerProfile(user);
+        })
+        .catch(() => {
+          // 조회 실패는 무시 — 기기에 캐시된 값/'--' 가 유지된다.
+        });
       readAllRuns()
         .then((res) => {
           if (!cancelled) setStats({ runCount: res.totalCount, totalDistanceKm: res.totalDistance });
@@ -53,7 +69,7 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
       return () => {
         cancelled = true;
       };
-    }, [isAuthenticated, setStats]),
+    }, [isAuthenticated, setStats, applyServerProfile]),
   );
 
   const handleLogout = async () => {
@@ -91,9 +107,13 @@ export const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
           onEdit={() => navigation.navigate('EditProfile')}
         />
 
-        {/* 신체 정보는 서버에 저장 필드가 없어 프로필 수정에서 입력한 값(기기 저장)을 보여준다. */}
+        {/* 모두 서버 값. 안정시 심박수·LTHR 은 LTHR 테스트 결과로만 갱신된다. */}
         <SettingsSection icon="👤" title="프로필">
           <SettingsRow label="나이" value={orDash(age)} unit={age ? '세' : undefined} />
+          <SettingsDivider />
+          <SettingsRow label="성별" value={genderLabel(gender) ?? '--'} />
+          <SettingsDivider />
+          <SettingsRow label="키" value={orDash(height)} unit={height ? 'cm' : undefined} />
           <SettingsDivider />
           <SettingsRow label="체중" value={orDash(weight)} unit={weight ? 'kg' : undefined} />
           <SettingsDivider />

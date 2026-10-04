@@ -6,6 +6,7 @@ import type { BluetoothDevice } from 'react-native-bluetooth-classic';
 
 import { DarkShell, DarkNavHeader, RSTabBar, type TabId } from '@/components/domain';
 import { useInsoleStore } from '@/stores/insoleStore';
+import { useWatchStore } from '@/stores/watchStore';
 import {
   isBluetoothReady,
   listBondedDevices,
@@ -29,8 +30,11 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
 
   const left = useInsoleStore((s) => s.L);
   const right = useInsoleStore((s) => s.R);
-  // 인솔 2 + Galaxy Watch(이름만, 항상 연결됨 처리)
-  const connectedCount = (left.connected ? 1 : 0) + (right.connected ? 1 : 0) + 1;
+  // 갤럭시 워치 — Data Layer 로 실제 연결 여부를 확인한다 (RunSense 워치 앱 설치 여부 포함)
+  const watchConnected = useWatchStore((s) => s.connected);
+  const watchAppInstalled = useWatchStore((s) => s.appInstalled);
+  const watchName = useWatchStore((s) => s.nodeName);
+  const connectedCount = (left.connected ? 1 : 0) + (right.connected ? 1 : 0) + (watchConnected ? 1 : 0);
 
   // 기기 선택 모달 상태
   const [pickerFoot, setPickerFoot] = useState<FootSide | null>(null);
@@ -138,7 +142,19 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
           onConnect={() => openPicker('R')}
           onDisconnect={() => handleDisconnect('R')}
         />
-        <DeviceCard icon="♥" name="심박 (Galaxy Watch)" model="Galaxy Watch · BLE" heart />
+        <DeviceCard
+          icon="♥"
+          name="심박 (Galaxy Watch)"
+          model={
+            !watchConnected
+              ? '워치 미연결 · Galaxy Wearable 앱에서 페어링'
+              : watchAppInstalled
+                ? `${watchName ?? 'Galaxy Watch'} · RunSense 워치 앱`
+                : `${watchName ?? 'Galaxy Watch'} · 워치 앱 설치 필요`
+          }
+          connected={watchConnected}
+          heart
+        />
 
         <SensorTestPanel left={left.packet} right={right.packet} />
       </ScrollView>
@@ -255,10 +271,11 @@ interface DeviceCardProps {
   icon: string;
   name: string;
   model: string;
+  connected?: boolean;
   heart?: boolean;
 }
 
-const DeviceCard = ({ icon, name, model, heart }: DeviceCardProps) => (
+const DeviceCard = ({ icon, name, model, connected = true, heart }: DeviceCardProps) => (
   <View
     className="rounded-[16px] pr-[14px] pl-[18px] py-[14px] mb-[10px] relative overflow-hidden"
     style={{
@@ -285,7 +302,7 @@ const DeviceCard = ({ icon, name, model, heart }: DeviceCardProps) => (
       <View className="flex-1">
         <View className="flex-row items-center gap-[6px] mb-[3px] flex-wrap">
           <Text className="text-[14px] font-bold text-white tracking-[-0.28px]">{name}</Text>
-          <ConnBadge connected />
+          <ConnBadge connected={connected} />
         </View>
         <Text className="text-[11px] font-medium" style={{ color: 'rgba(167,139,250,0.7)' }}>{model}</Text>
       </View>

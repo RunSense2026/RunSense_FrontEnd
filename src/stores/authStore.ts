@@ -5,6 +5,7 @@ import {
   setTokens,
   clearTokens,
   clearPersistedProfile,
+  clearPersistedAirQuality,
   persistSession,
   type PersistedSession,
 } from '@/utils/storage';
@@ -25,9 +26,9 @@ interface AuthState {
 }
 
 // 로그인/복원 시 프로필 스토어(설정 화면 표시용)에 이름·이메일을 동기화한다.
-// persist:false — 서버 값으로 사용자가 프로필 수정에서 고친 값을 덮어써 저장하지 않는다.
+// 신체 정보를 포함한 나머지 값은 설정 화면 진입 시 readMyProfile() 로 서버에서 받아온다.
 const syncProfile = (name: string, email: string) => {
-  useProfileStore.getState().setProfile({ name, email }, { persist: false });
+  useProfileStore.getState().setAccount(name, email);
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -72,8 +73,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   clearSession: () => {
     clearTokens();
-    // 다음 사용자에게 이전 사용자의 프로필/신체 정보가 남지 않게 함께 비운다.
+    // 다음 사용자에게 이전 사용자의 프로필/신체 정보·마지막 위치가 남지 않게 함께 비운다.
     clearPersistedProfile();
+    clearPersistedAirQuality();
     useProfileStore.getState().reset();
     set({ userId: null, userName: null, email: null, isAuthenticated: false });
   },

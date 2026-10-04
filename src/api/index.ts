@@ -1,6 +1,15 @@
 export { apiClient } from './client';
-export { signUp, login, checkEmailDuplicate, reissue, logout } from './auth';
+export {
+  signUp,
+  login,
+  checkEmailDuplicate,
+  reissue,
+  logout,
+  readMyProfile,
+  updateMyProfile,
+} from './auth';
 export { saveRun, readAllRuns, readRunsByDate, readRun, deleteRun } from './run';
+export { createLthrRecord, readLatestLthrRecord } from './lthr';
 export {
   createCoaching,
   createCoachingReport,
@@ -14,3 +23,4 @@ export {
 } from './ai';
 export * from './public';
 
+export { fetchNearbyParks } from './course';

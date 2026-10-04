@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle, Defs, LinearGradient as SvgGradient, Stop, G, Line, Polygon } from 'react-native-svg';
 
+import { useFocusEffect } from '@react-navigation/native';
+
+import { readLatestLthrRecord } from '@/api';
 import { DarkShell, DarkNavHeader } from '@/components/domain';
 import { gradients } from '@/theme/tokens';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useWatchStore } from '@/stores/watchStore';
+import { useAuthStore } from '@/stores/authStore';
 
+import type { LthrRecordResponseDto } from '@/types/api';
 import type { ScreenProps } from '@/types/navigation';
 
 type Mode = 'dist' | 'free' | 'lthr';
@@ -20,7 +26,29 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
   // 미니 카드 값 — 연결 기기는 인솔 연결 상태(+Galaxy Watch), LTHR 은 프로필에 저장된 값.
   const insoleCount =
     (useInsoleStore((s) => s.L.connected) ? 1 : 0) + (useInsoleStore((s) => s.R.connected) ? 1 : 0);
+  const watchConnected = useWatchStore((s) => s.connected);
+  const deviceCount = insoleCount + (watchConnected ? 1 : 0);
   const lthr = useProfileStore((s) => s.lthr);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  // LTHR 모드의 '지난 측정' 카드 — GET /api/lthr/latest. undefined = 불러오는 중/실패, null = 기록 없음
+  const [latestLthr, setLatestLthr] = useState<LthrRecordResponseDto | null | undefined>(undefined);
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) return;
+      let cancelled = false;
+      readLatestLthrRecord()
+        .then((record) => {
+          if (!cancelled) setLatestLthr(record);
+        })
+        .catch(() => {
+          // 조회 실패 시 카드는 '불러오지 못함' 상태로 둔다.
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated]),
+  );
 
   const pace = useMemo(() => {
     // 목표 페이스는 거리 모드(거리·시간 목표)에서만 계산된다.
@@ -298,14 +326,14 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
         {isFree && <FreeRunIntro />}
 
         {/* LTHR intro hero — LTHR mode */}
-        {isLthr && <LTHRTestIntro />}
+        {isLthr && <LTHRTestIntro latest={latestLthr} guest={!isAuthenticated} />}
 
         {/* Devices + LTHR mini cards */}
         <View className="flex-row gap-2 mb-3">
           <MiniInfo
             label="연결 기기"
-            value={String(insoleCount + 1)}
-            sub={insoleCount === 2 ? '모두 정상' : '인솔 확인 필요'}
+            value={String(deviceCount)}
+            sub={insoleCount === 2 && watchConnected ? '모두 정상' : insoleCount < 2 ? '인솔 확인 필요' : '워치 확인 필요'}
             tone="ok"
           />
           <MiniInfo label="내 LTHR" value={lthr || '--'} sub={lthr ? 'bpm' : '미설정'} tone="hot" />
@@ -361,7 +389,7 @@ export const RunSetupScreen = ({ navigation }: ScreenProps<'RunSetup'>) => {
           style={{ color: isLthr ? 'rgba(251,191,36,0.65)' : 'rgba(167,139,250,0.55)' }}
         >
           {isLthr
-            ? '3초 후 워밍업 → 30분 전력 질주 시작'
+            ? '안정 심박 10초 측정 → 워밍업 10분 → 30분 테스트'
             : isFree
               ? '목표 없이 자유롭게 — 3초 후 GPS 잠금 → 자동 시작'
               : '3초 후 GPS 신호 잠금 → 자동 시작'}
@@ -421,7 +449,13 @@ const MiniInfo = ({ label, value, sub, tone }: { label: string; value: string; s
   );
 };
 
-const LTHRTestIntro = () => (
+/** 측정 일시(ISO) → 'YYYY.MM.DD' */
+const fmtRecordDate = (iso: string): string => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const LTHRTestIntro = ({ latest, guest }: { latest: LthrRecordResponseDto | null | undefined; guest: boolean }) => (
   <View className="mb-3">
     {/* HERO */}
     <View className="rounded-[18px] overflow-hidden mb-[10px]">
@@ -524,22 +558,42 @@ const LTHRTestIntro = () => (
         <Text className="text-[10px] font-bold tracking-[0.6px] uppercase" style={{ color: 'rgba(167,139,250,0.7)' }}>
           지난 측정
         </Text>
-        <View className="flex-row items-baseline gap-[6px] mt-[3px]">
-          <Text className="text-[18px] font-bold text-white tracking-[-0.36px]">158</Text>
-          <Text className="text-[11px] font-semibold" style={{ color: 'rgba(221,214,254,0.55)' }}>bpm</Text>
-          <Text className="text-[10px] font-medium ml-1" style={{ color: 'rgba(221,214,254,0.45)' }}>· 2026.03.15</Text>
+        {latest ? (
+          <View className="flex-row items-baseline gap-[6px] mt-[3px]">
+            <Text className="text-[18px] font-bold text-white tracking-[-0.36px]">{latest.lthr}</Text>
+            <Text className="text-[11px] font-semibold" style={{ color: 'rgba(221,214,254,0.55)' }}>bpm</Text>
+            <Text className="text-[10px] font-medium ml-1" style={{ color: 'rgba(221,214,254,0.45)' }}>
+              · {fmtRecordDate(latest.measuredAt)}
+            </Text>
+          </View>
+        ) : (
+          <Text className="text-[12px] font-semibold mt-[3px]" style={{ color: 'rgba(221,214,254,0.6)' }}>
+            {guest
+              ? '로그인하면 기록을 볼 수 있어요'
+              : latest === null
+                ? '아직 측정 기록이 없어요'
+                : '기록을 불러오는 중…'}
+          </Text>
+        )}
+      </View>
+      {latest && (
+        <View
+          className="px-[9px] py-1 rounded-full"
+          style={{
+            backgroundColor: latest.recommendRetest ? 'rgba(251,191,36,0.18)' : 'rgba(110,231,183,0.14)',
+            borderWidth: 0.5,
+            borderColor: latest.recommendRetest ? 'rgba(251,191,36,0.35)' : 'rgba(110,231,183,0.3)',
+          }}
+        >
+          <Text
+            className="text-[10px] font-bold"
+            style={{ color: latest.recommendRetest ? '#fde68a' : '#6ee7b7' }}
+          >
+            {latest.daysSinceMeasured === 0 ? '오늘' : `${latest.daysSinceMeasured}일 전`}
+            {latest.recommendRetest ? ' · 재측정 권장' : ''}
+          </Text>
         </View>
-      </View>
-      <View
-        className="px-[9px] py-1 rounded-full"
-        style={{
-          backgroundColor: 'rgba(251,191,36,0.18)',
-          borderWidth: 0.5,
-          borderColor: 'rgba(251,191,36,0.35)',
-        }}
-      >
-        <Text className="text-[10px] font-bold" style={{ color: '#fde68a' }}>70일 전 · 재측정 권장</Text>
-      </View>
+      )}
     </View>
   </View>
 );
