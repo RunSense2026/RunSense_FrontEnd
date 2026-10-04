@@ -52,6 +52,8 @@ export type RootStackParamList = {
     result?: LthrAnalyzeResponseDto;
     coachingAnalysis?: string;
     samples?: number[];
+    /** 테스트 전 안정 측정 단계의 평균 심박수 (bpm) */
+    restingHeartRate?: number;
   } | undefined;
 
   // Detail

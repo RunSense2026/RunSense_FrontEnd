@@ -3,10 +3,11 @@ import { ScrollView, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Defs, Line, LinearGradient as SvgGradient, Path, Polyline, Rect, Stop } from 'react-native-svg';
 
-import { updateMyProfile } from '@/api';
+import { createLthrRecord } from '@/api';
 import { createLthrCoaching } from '@/api/ai';
 import { DarkNavHeader, DarkShell, RSButton } from '@/components/domain';
 import { useProfileStore } from '@/stores/profileStore';
+import { numberToField } from '@/utils/profile';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -21,10 +22,14 @@ const ZONE_COLORS: Record<string, string> = {
 };
 
 export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'>) => {
-  const { result, coachingAnalysis: initialCoaching, samples: routeSamples } = route.params ?? {};
+  const {
+    result,
+    coachingAnalysis: initialCoaching,
+    samples: routeSamples,
+    restingHeartRate,
+  } = route.params ?? {};
 
   const setProfile = useProfileStore((s) => s.setProfile);
-  const applyServerProfile = useProfileStore((s) => s.applyServerProfile);
   const [coaching, setCoaching] = useState<string | undefined>(initialCoaching);
   const [isLoadingCoaching, setIsLoadingCoaching] = useState(false);
 
@@ -103,13 +108,24 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
   }, [result, lthr]);
 
   const handleComplete = () => {
-    setProfile({ lthr: String(lthr) });
-    // 실제 측정 결과만 서버에 저장한다(결과 없이 보이는 기본값은 올리지 않는다).
-    // 실패해도 기기 값은 남아 있고, 다음 프로필 저장 때 다시 보낼 수 있다.
-    if (result?.lthr != null) {
-      updateMyProfile({ lthr: Math.round(result.lthr) })
-        .then(applyServerProfile)
-        .catch(() => {});
+    // 실제 측정 결과만 기록으로 저장한다(결과 없이 보이는 기본값은 올리지 않는다).
+    // 서버가 기록을 쌓으면서 프로필의 LTHR·안정시 심박수도 갱신하므로, 성공하면 기기 캐시도 맞춘다.
+    if (result?.lthr != null && restingHeartRate != null) {
+      createLthrRecord({
+        lthr: Math.round(result.lthr),
+        restingHeartRate,
+        maxHeartRate: result.maxHeartRate,
+        averageHeartRate: result.averageHeartRate,
+      })
+        .then((record) =>
+          setProfile({
+            lthr: String(record.lthr),
+            restingHr: numberToField(record.restingHeartRate),
+          }),
+        )
+        .catch(() => {
+          // 저장 실패 시 프로필은 이전 테스트 값 그대로 둔다.
+        });
     }
     navigation.navigate('Main');
   };
@@ -230,6 +246,12 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
 
         {/* Stats grid */}
         <View className="flex-row gap-2 mb-3">
+          <ReportStat
+            label="안정 심박"
+            value={restingHeartRate != null ? numberToField(restingHeartRate) : '--'}
+            unit="bpm"
+            color="#93c5fd"
+          />
           <ReportStat label="최고 심박" value={String(maxHr)} unit="bpm" color="#f87171" />
           <ReportStat label="평균 심박" value={String(avgHr)} unit="bpm" color="#a78bfa" />
         </View>

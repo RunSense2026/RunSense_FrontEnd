@@ -7,7 +7,8 @@ import { persistProfile, type PersistedProfile } from '@/utils/storage';
 // 사용자 프로필 — 설정(마이페이지)/프로필 수정 화면이 공유하는 단일 소스.
 //
 // 값의 출처가 셋으로 나뉜다:
-//  - 이름·생년월일(→나이)·성별·키·체중·안정시 심박수·LTHR: 백엔드 `PATCH /api/users` (readMyProfile/updateMyProfile)
+//  - 이름·생년월일(→나이)·성별·키·체중: 백엔드 `PATCH /api/users` (readMyProfile/updateMyProfile)
+//  - 안정시 심박수·LTHR: LTHR 테스트 결과(`POST /api/lthr`)로만 갱신되고, 프로필 응답으로 읽기만 한다
 //  - 이메일·가입일·러닝 횟수·누적 거리: 로그인 응답 시드 → 설정 화면에서 서버 값으로 갱신
 //  - 프로필 사진: 서버에 저장 필드가 없어 기기(AsyncStorage)에만 보관
 // 서버 값도 기기에 캐시해 두어 부팅 직후·오프라인에서 바로 보여주고, 서버 응답이 오면 덮어쓴다.
@@ -107,17 +108,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   },
 
   applyServerProfile: (user) => {
-    // 이름·신체 정보는 서버 값으로 덮어쓰고 기기 캐시에도 반영한다.
-    // 심박 값은 서버에 아직 없으면(이전 버전에서 기기에만 저장한 계정) 기기 값을 유지한다.
-    const s = get();
-    s.setProfile({
+    // 서버 값으로 덮어쓰고 기기 캐시에도 반영한다.
+    // 심박 값은 LTHR 테스트로만 생기므로, 서버에 없으면(테스트 전) 기기에 남은 예전 수동 입력값도 지운다.
+    get().setProfile({
       name: user.userName || '',
       birthDate: user.birthDate ?? '',
       gender: user.gender ?? '',
       height: numberToField(user.height),
       weight: numberToField(user.weight),
-      restingHr: user.restingHeartRate != null ? numberToField(user.restingHeartRate) : s.restingHr,
-      lthr: user.lthr != null ? String(user.lthr) : s.lthr,
+      restingHr: numberToField(user.restingHeartRate),
+      lthr: user.lthr != null ? String(user.lthr) : '',
     });
     // 이메일·가입일은 수정 대상이 아니라 캐시하지 않고 화면 표시용으로만 갱신한다.
     set((s) => ({
