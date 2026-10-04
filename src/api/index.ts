@@ -23,3 +23,4 @@ export {
 } from './ai';
 export * from './public';
 
+export { fetchNearbyParks } from './course';
