@@ -48,8 +48,6 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
   const [gender, setGender] = useState<Gender | ''>(savedGender);
   const [height, setHeight] = useState(savedHeight);
   const [weight, setWeight] = useState(savedWeight);
-  const [restingHr, setRestingHr] = useState(savedRestingHr);
-  const [lthr, setLthr] = useState(savedLthr);
   const [avatarUri, setAvatarUri] = useState(savedAvatar);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -80,10 +78,8 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     const trimmedBirthDate = birthDate.trim();
     const heightValue = fieldToNumber(height);
     const weightValue = fieldToNumber(weight);
-    const restingHrValue = fieldToNumber(restingHr);
-    const lthrValue = fieldToNumber(lthr);
 
-    // 서버 제약(이름 2~5자, 생년월일 date, 키·체중·심박 양수, LTHR 정수)을 보내기 전에 확인한다.
+    // 서버 제약(이름 2~5자, 생년월일 date, 키·체중 양수)을 보내기 전에 확인한다.
     if (trimmedName.length < 2 || trimmedName.length > 5) {
       setError('이름은 2~5자로 입력해주세요.');
       return;
@@ -100,24 +96,12 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
       setError('체중은 0보다 큰 숫자로 입력해주세요.');
       return;
     }
-    if (restingHrValue === null) {
-      setError('안정시 심박수는 0보다 큰 숫자로 입력해주세요.');
-      return;
-    }
-    if (lthrValue === null || (lthrValue !== undefined && !Number.isInteger(lthrValue))) {
-      setError('LTHR은 0보다 큰 정수로 입력해주세요.');
-      return;
-    }
 
     setError(null);
     setSaving(true);
 
-    // 사진은 서버에 저장 필드가 없어 기기에만 남긴다. 심박 값도 오프라인 표시용으로 기기에 캐시한다.
-    setProfile({
-      restingHr: restingHr.trim(),
-      lthr: lthr.trim(),
-      avatarUri,
-    });
+    // 사진은 서버에 저장 필드가 없어 기기에만 남긴다.
+    setProfile({ avatarUri });
 
     // 비워 둔 값은 보내지 않는다 — 서버가 null 필드를 '수정 안 함'으로 처리하므로 지울 수는 없다.
     const patch: UserUpdateRequestDto = { userName: trimmedName };
@@ -125,8 +109,6 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     if (gender) patch.gender = gender;
     if (heightValue !== undefined) patch.height = heightValue;
     if (weightValue !== undefined) patch.weight = weightValue;
-    if (restingHrValue !== undefined) patch.restingHeartRate = restingHrValue;
-    if (lthrValue !== undefined) patch.lthr = lthrValue;
 
     try {
       const updated = await updateMyProfile(patch);
@@ -206,17 +188,18 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
           <EditRow label="키" value={height} onChangeText={setHeight} keyboardType="decimal-pad" placeholder="--" unit="cm" />
           <Divider />
           <EditRow label="체중" value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="--" unit="kg" />
-          <Divider />
-          <EditRow
+        </Card>
+
+        {/* 심박 정보 — LTHR 테스트 결과로만 갱신되어 여기서는 보기만 한다. */}
+        <SectionLabel>심박 정보</SectionLabel>
+        <Card>
+          <ReadOnlyRow
             label="안정시 심박수"
-            value={restingHr}
-            onChangeText={setRestingHr}
-            keyboardType="number-pad"
-            placeholder="--"
-            unit="bpm"
+            value={savedRestingHr ? `${savedRestingHr} bpm` : '--'}
+            note="LTHR 테스트로 측정"
           />
           <Divider />
-          <EditRow label="LTHR" value={lthr} onChangeText={setLthr} keyboardType="number-pad" placeholder="--" unit="bpm" />
+          <ReadOnlyRow label="LTHR" value={savedLthr ? `${savedLthr} bpm` : '--'} note="LTHR 테스트로 측정" />
         </Card>
 
         {/* Actions */}

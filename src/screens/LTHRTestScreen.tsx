@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Pressable, ScrollView, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -7,6 +7,7 @@ import { analyzeLthr, createLthrCoaching } from '@/api/ai';
 import { DarkShell, RSTabBar, type TabId } from '@/components/domain';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
 import { useMyLthr } from '@/stores/profileStore';
+import { WATCH_LIVE_STALE_MS, useWatchStore } from '@/stores/watchStore';
 import { colors } from '@/theme/tokens';
 import { hrZoneColor } from '@/utils/format';
 
@@ -15,10 +16,40 @@ import type { ScreenProps } from '@/types/navigation';
 // HR graph width = screen − ScrollView padding (18×2) − HR card padding (14×2)
 const HR_GRAPH_W = Dimensions.get('window').width - 18 * 2 - 14 * 2;
 
+/** 테스트 전 안정 측정 시간(초) — 이 동안의 평균 심박을 안정시 심박수로 저장한다 */
+const REST_SECONDS = 10;
+
+// 안정 측정용 현재 심박 — 워치 실시간 심박이 있으면 그 값을, 없으면 시뮬레이션 값을 쓴다.
+// (테스트 본 측정 화면도 아직 시뮬레이션 샘플을 쓰므로 같은 방식으로 맞춘다)
+const readRestingHeartRate = (tick: number): number => {
+  const { live, liveAt } = useWatchStore.getState();
+  if (live && Date.now() - liveAt <= WATCH_LIVE_STALE_MS && live.heartRate > 0) {
+    return live.heartRate;
+  }
+  return Math.round(60 + Math.sin(tick * 1.7) * 2);
+};
+
 export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const [elapsed] = useState(754);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const myLthr = useMyLthr();
+
+  // 안정 측정 단계: 화면 진입 즉시 10초간 1초마다 심박을 모으고, 끝나면 본 테스트로 넘어간다.
+  const [restSamples, setRestSamples] = useState<number[]>([]);
+  const restDone = restSamples.length >= REST_SECONDS;
+  const restingHeartRate = restDone
+    ? Math.round((restSamples.reduce((sum, hr) => sum + hr, 0) / restSamples.length) * 10) / 10
+    : undefined;
+
+  useEffect(() => {
+    if (restDone) return;
+    const timer = setInterval(() => {
+      setRestSamples((prev) =>
+        prev.length >= REST_SECONDS ? prev : [...prev, readRestingHeartRate(prev.length)],
+      );
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [restDone]);
 
   const TOTAL = 1800;
   const pct = Math.min(100, (elapsed / TOTAL) * 100);
@@ -42,6 +73,17 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const rss = String(remaining % 60).padStart(2, '0');
 
   const handleTabPress = (id: TabId) => handleRootTabPress(navigation, id);
+
+  if (!restDone) {
+    return (
+      <RestStage
+        seconds={restSamples.length}
+        currentHR={restSamples[restSamples.length - 1]}
+        onCancel={() => navigation.goBack()}
+        onTabPress={handleTabPress}
+      />
+    );
+  }
 
   const handleStop = async () => {
     if (isAnalyzing) return;
@@ -70,9 +112,10 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
         result: analyzeRes,
         coachingAnalysis,
         samples,
+        restingHeartRate,
       });
     } catch {
-      navigation.navigate('LTHRReport', { samples });
+      navigation.navigate('LTHRReport', { samples, restingHeartRate });
     } finally {
       setIsAnalyzing(false);
     }
@@ -160,6 +203,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
           }}
         >
           <View className="flex-row gap-[6px] mb-3">
+            <PhaseDot label="안정 측정" done />
             <PhaseDot label="워밍업" done />
             <PhaseDot label="전반 10분" done />
             <PhaseDot label="후반 20분 (측정)" active />
@@ -301,6 +345,87 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
     </DarkShell>
   );
 };
+
+// 테스트 전 안정 측정 단계 — 움직이지 않은 상태로 REST_SECONDS 동안 심박을 잰다.
+const RestStage = ({
+  seconds,
+  currentHR,
+  onCancel,
+  onTabPress,
+}: {
+  seconds: number;
+  currentHR: number | undefined;
+  onCancel: () => void;
+  onTabPress: (id: TabId) => void;
+}) => (
+  <DarkShell>
+    <View
+      className="absolute top-0 -right-[80px] w-[280px] h-[280px] rounded-full opacity-40"
+      style={{ backgroundColor: 'rgba(124,58,237,0.32)' }}
+      pointerEvents="none"
+    />
+    <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <View className="pt-1 pb-[14px]">
+        <Text className="text-[11px] text-purple-300 font-semibold tracking-[0.88px] uppercase">체력 테스트</Text>
+        <Text className="text-[22px] font-bold text-white tracking-[-0.66px] leading-[26px] mt-1">
+          안정 시 심박 측정 중
+        </Text>
+      </View>
+
+      <View
+        className="rounded-[18px] px-4 pt-5 pb-[18px] mb-3 items-center"
+        style={{
+          backgroundColor: 'rgba(255,255,255,0.05)',
+          borderWidth: 0.5,
+          borderColor: 'rgba(167,139,250,0.18)',
+        }}
+      >
+        <View className="flex-row gap-[6px] mb-3">
+          <PhaseDot label="안정 측정" active />
+          <PhaseDot label="워밍업" />
+          <PhaseDot label="전반 10분" />
+          <PhaseDot label="후반 20분 (측정)" />
+        </View>
+
+        <View className="flex-row items-baseline gap-[6px]">
+          <Text className="text-[56px] font-bold text-white tracking-[-2.8px] leading-[58px]">
+            {REST_SECONDS - seconds}
+          </Text>
+          <Text className="text-[18px] font-semibold" style={{ color: 'rgba(167,139,250,0.6)' }}>초</Text>
+        </View>
+        <Text className="text-[12px] font-medium text-center mt-2 leading-[18px]" style={{ color: 'rgba(221,214,254,0.8)' }}>
+          편안히 선 채로 움직이지 마세요.{'\n'}측정한 평균 심박이 안정 시 심박수로 저장됩니다.
+        </Text>
+
+        <View className="w-full h-2 rounded-full overflow-hidden mt-[14px]" style={{ backgroundColor: 'rgba(167,139,250,0.14)' }}>
+          <LinearGradient
+            colors={['#7c3aed', '#6366f1', '#3b82f6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ width: `${(seconds / REST_SECONDS) * 100}%`, height: '100%', borderRadius: 999 }}
+          />
+        </View>
+
+        <View className="flex-row items-baseline gap-1 mt-4">
+          <Svg width={16} height={16} viewBox="0 0 24 24">
+            <Path
+              d="M12 21s-7-4.5-9.5-9.5C0.5 7 4 3 8 3c2 0 3.5 1 4 2 0.5-1 2-2 4-2 4 0 7.5 4 5.5 8.5C19 16.5 12 21 12 21z"
+              fill="#ef4444"
+            />
+          </Svg>
+          <Text className="text-[28px] font-bold text-white tracking-[-1px]">{currentHR ?? '--'}</Text>
+          <Text className="text-[11px] font-bold" style={{ color: '#fca5a5' }}>BPM</Text>
+        </View>
+      </View>
+
+      <Pressable onPress={onCancel} className="items-center py-3">
+        <Text className="text-[13px] font-semibold" style={{ color: 'rgba(167,139,250,0.7)' }}>취소</Text>
+      </Pressable>
+    </ScrollView>
+
+    <RSTabBar active="run" onChange={onTabPress} />
+  </DarkShell>
+);
 
 const PhaseDot = ({ label, active, done }: { label: string; active?: boolean; done?: boolean }) => {
   const color = done ? '#10b981' : active ? '#a78bfa' : 'rgba(167,139,250,0.3)';

@@ -64,6 +64,7 @@ export type Gender = 'M' | 'F' | 'ETC';
 /**
  * 유저 정보 수정 요청 — PATCH /api/users
  * 보내지 않은(= null) 필드는 서버에서 수정하지 않는다. 즉 값을 비우는(지우는) 건 불가능하다.
+ * 안정시 심박수·LTHR 은 여기서 수정할 수 없다 — LTHR 테스트 결과(POST /api/lthr)로만 갱신된다.
  */
 export interface UserUpdateRequestDto {
   /** 사용자 이름 (2~5자) */
@@ -76,10 +77,6 @@ export interface UserUpdateRequestDto {
   height?: number;
   /** 체중 (kg) */
   weight?: number;
-  /** 안정시 심박수 (bpm) */
-  restingHeartRate?: number;
-  /** 젖산 역치 심박수 LTHR (bpm, 정수) */
-  lthr?: number;
 }
 
 /** 유저 정보 응답 — PATCH /api/users (수정 후 전체 프로필) */
@@ -101,6 +98,37 @@ export interface UserResponseDto {
   isVerified: boolean;
   /** 가입일 (date) */
   createdAt: string;
+}
+
+/** LTHR 테스트 결과 저장 요청 — POST /api/lthr (유저의 LTHR·안정시 심박수도 함께 갱신된다) */
+export interface LthrRecordCreateRequestDto {
+  /** 측정된 LTHR (bpm, 정수) */
+  lthr: number;
+  /** 테스트 전 안정 측정 단계의 평균 심박수 (bpm) */
+  restingHeartRate: number;
+  /** 테스트 중 최고 심박수 (bpm, 정수) */
+  maxHeartRate?: number;
+  /** 테스트 중 평균 심박수 (bpm) */
+  averageHeartRate?: number;
+}
+
+/** LTHR 테스트 기록 응답 — POST /api/lthr, GET /api/lthr/latest */
+export interface LthrRecordResponseDto {
+  recordId: number;
+  lthr: number;
+  /** 직전 테스트의 LTHR — 첫 측정이면 null */
+  previousLthr: number | null;
+  /** 직전 테스트 대비 증감 — 첫 측정이면 null */
+  lthrDifference: number | null;
+  restingHeartRate: number | null;
+  maxHeartRate: number | null;
+  averageHeartRate: number | null;
+  /** 측정 일시 (ISO, 서울 기준) */
+  measuredAt: string;
+  /** 측정일로부터 지난 일수 */
+  daysSinceMeasured: number;
+  /** 측정 후 6주(42일) 이상 지나 재측정을 권장하는지 */
+  recommendRetest: boolean;
 }
 
 /** 이메일 중복 체크 응답 — GET /api/users/email-duplicate */
