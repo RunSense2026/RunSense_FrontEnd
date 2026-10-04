@@ -40,7 +40,7 @@ export const OnboardingScreen = ({ navigation }: ScreenProps<'Onboarding'>) => {
 
   return (
     <AuthShell>
-      <View className="px-6 flex-row justify-between items-center pt-2">
+      <View className="px-6 flex-row justify-between items-center pt-4 min-h-[36px]">
         <View className="flex-row gap-[6px]">
           {STEPS.map((_, i) => {
             if (i <= step) {
@@ -63,10 +63,12 @@ export const OnboardingScreen = ({ navigation }: ScreenProps<'Onboarding'>) => {
             );
           })}
         </View>
-        {step < STEPS.length - 1 && (
-          <Pressable onPress={handleDone}>
+        {step < STEPS.length - 1 ? (
+          <Pressable onPress={handleDone} hitSlop={8}>
             <Text className="text-[13px] text-t3 font-medium">건너뛰기</Text>
           </Pressable>
+        ) : (
+          <View style={{ width: 44, height: 18 }} />
         )}
       </View>
 

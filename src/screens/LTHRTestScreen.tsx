@@ -224,7 +224,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
         pointerEvents="none"
       />
 
-      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
         {/* Inline header (no back; stop button used instead) */}
         <View className="flex-row justify-between items-center pt-1 pb-[14px]">
           <View>
@@ -497,7 +497,7 @@ const RestStage = ({
       style={{ backgroundColor: 'rgba(124,58,237,0.32)' }}
       pointerEvents="none"
     />
-    <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 14 }}>
+    <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 14 }}>
       <View className="pt-1 pb-[14px]">
         <Text className="text-[11px] text-purple-300 font-semibold tracking-[0.88px] uppercase">체력 테스트</Text>
         <Text className="text-[22px] font-bold text-white tracking-[-0.66px] leading-[26px] mt-1">
