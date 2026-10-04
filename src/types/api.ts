@@ -79,7 +79,7 @@ export interface UserUpdateRequestDto {
   weight?: number;
 }
 
-/** 유저 정보 응답 — PATCH /api/users (수정 후 전체 프로필) */
+/** 유저 정보 응답 — GET /api/users (내 프로필), PATCH /api/users (수정 후 전체 프로필) */
 export interface UserResponseDto {
   userId: number;
   userName: string;
