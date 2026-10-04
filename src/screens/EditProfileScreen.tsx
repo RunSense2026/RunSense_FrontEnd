@@ -80,8 +80,10 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     const trimmedBirthDate = birthDate.trim();
     const heightValue = fieldToNumber(height);
     const weightValue = fieldToNumber(weight);
+    const restingHrValue = fieldToNumber(restingHr);
+    const lthrValue = fieldToNumber(lthr);
 
-    // 서버 제약(이름 2~5자, 생년월일 date, 키·체중 양수)을 보내기 전에 확인한다.
+    // 서버 제약(이름 2~5자, 생년월일 date, 키·체중·심박 양수, LTHR 정수)을 보내기 전에 확인한다.
     if (trimmedName.length < 2 || trimmedName.length > 5) {
       setError('이름은 2~5자로 입력해주세요.');
       return;
@@ -98,11 +100,19 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
       setError('체중은 0보다 큰 숫자로 입력해주세요.');
       return;
     }
+    if (restingHrValue === null) {
+      setError('안정시 심박수는 0보다 큰 숫자로 입력해주세요.');
+      return;
+    }
+    if (lthrValue === null || (lthrValue !== undefined && !Number.isInteger(lthrValue))) {
+      setError('LTHR은 0보다 큰 정수로 입력해주세요.');
+      return;
+    }
 
     setError(null);
     setSaving(true);
 
-    // 안정시 심박수·LTHR·사진은 서버에 저장 필드가 없어 기기에만 남긴다.
+    // 사진은 서버에 저장 필드가 없어 기기에만 남긴다. 심박 값도 오프라인 표시용으로 기기에 캐시한다.
     setProfile({
       restingHr: restingHr.trim(),
       lthr: lthr.trim(),
@@ -115,6 +125,8 @@ export const EditProfileScreen = ({ navigation }: ScreenProps<'EditProfile'>) =>
     if (gender) patch.gender = gender;
     if (heightValue !== undefined) patch.height = heightValue;
     if (weightValue !== undefined) patch.weight = weightValue;
+    if (restingHrValue !== undefined) patch.restingHeartRate = restingHrValue;
+    if (lthrValue !== undefined) patch.lthr = lthrValue;
 
     try {
       const updated = await updateMyProfile(patch);

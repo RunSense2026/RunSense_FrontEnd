@@ -3,6 +3,7 @@ import { ScrollView, Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Defs, Line, LinearGradient as SvgGradient, Path, Polyline, Rect, Stop } from 'react-native-svg';
 
+import { updateMyProfile } from '@/api';
 import { createLthrCoaching } from '@/api/ai';
 import { DarkNavHeader, DarkShell, RSButton } from '@/components/domain';
 import { useProfileStore } from '@/stores/profileStore';
@@ -23,6 +24,7 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
   const { result, coachingAnalysis: initialCoaching, samples: routeSamples } = route.params ?? {};
 
   const setProfile = useProfileStore((s) => s.setProfile);
+  const applyServerProfile = useProfileStore((s) => s.applyServerProfile);
   const [coaching, setCoaching] = useState<string | undefined>(initialCoaching);
   const [isLoadingCoaching, setIsLoadingCoaching] = useState(false);
 
@@ -102,6 +104,13 @@ export const LTHRReportScreen = ({ route, navigation }: ScreenProps<'LTHRReport'
 
   const handleComplete = () => {
     setProfile({ lthr: String(lthr) });
+    // 실제 측정 결과만 서버에 저장한다(결과 없이 보이는 기본값은 올리지 않는다).
+    // 실패해도 기기 값은 남아 있고, 다음 프로필 저장 때 다시 보낼 수 있다.
+    if (result?.lthr != null) {
+      updateMyProfile({ lthr: Math.round(result.lthr) })
+        .then(applyServerProfile)
+        .catch(() => {});
+    }
     navigation.navigate('Main');
   };
 
