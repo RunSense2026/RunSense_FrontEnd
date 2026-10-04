@@ -317,3 +317,63 @@ export interface AirQualityResponseDto {
   /** 통합대기환경 등급 (1:좋음, 2:보통, 3:나쁨, 4:매우나쁨) */
   khaiGrade: string | null;
 }
+
+// ─── Course (주변 공원 추천) ──────────────────────────────────────
+// 전국도시공원정보표준데이터 기준으로 현재 위치에서 직선거리가 가까운 공원을 서버가 골라 준다.
+
+/** 공원 시설 태그 — 필터(tags)와 응답 태그에 공통으로 쓰인다 */
+export type ParkTag = '산책로' | '운동기구' | '구기장' | '화장실' | '음수대' | '주차장' | '휴식공간' | 'CCTV';
+
+export const PARK_TAGS: ParkTag[] = ['산책로', '운동기구', '구기장', '화장실', '음수대', '주차장', '휴식공간', 'CCTV'];
+
+/** 주변 공원 추천 요청 — GET /api/course/nearby */
+export interface NearbyParkQuery {
+  lat: number;
+  lon: number;
+  /** 추천 개수 (1~10, 서버 기본 3) */
+  limit?: number;
+  /** 최소 공원면적(㎡). 0이면 면적 필터 없음 (서버 기본 10,000) */
+  minArea?: number;
+  /** 필수 시설 태그 — 모두 갖춘 공원만 반환 (걸수록 후보가 크게 줄어든다) */
+  tags?: ParkTag[];
+}
+
+/** 공원 보유시설 원문 (공공데이터 값 그대로, 없으면 null) */
+export interface ParkFacilityDto {
+  /** 운동시설 */
+  sports: string | null;
+  /** 유희시설 */
+  play: string | null;
+  /** 편익시설 */
+  convenience: string | null;
+  /** 교양시설 */
+  culture: string | null;
+  /** 기타시설 */
+  etc: string | null;
+}
+
+/** 추천 공원 */
+export interface ParkResponseDto {
+  /** 추천 순위 (1부터, 가까운 순) */
+  rank: number;
+  name: string;
+  /** 공원구분 (예: "근린공원") */
+  type: string;
+  /** 소재지 주소 (도로명 우선, 없으면 지번) */
+  address: string;
+  latitude: number;
+  longitude: number;
+  /** 공원면적(㎡), 정보 없으면 null */
+  area: number | null;
+  /** 현재 위치로부터 직선거리(km) */
+  distanceKm: number;
+  /** 표준 시설 태그 (없으면 빈 배열) */
+  tags: ParkTag[];
+  facilities: ParkFacilityDto | null;
+}
+
+/** 주변 공원 추천 응답 */
+export interface ParkListResponseDto {
+  /** 가까운 순으로 정렬된 추천 공원 */
+  parks: ParkResponseDto[];
+}
