@@ -2,7 +2,27 @@ import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { createCoaching, resolveVoiceUrl } from '@/api';
-import type { AiCoachingRequestDto, AiCoachingWithVoiceDto } from '@/types/aiApi';
+import { useProfileStore } from '@/stores/profileStore';
+import { ageFromBirthDate } from '@/utils/profile';
+import type { AiCoachingRequestDto, AiCoachingWithVoiceDto, AiUserProfileDto } from '@/types/aiApi';
+
+const toNumberOrNull = (value: string): number | null => {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+// 코칭 개인화용 프로필 — 마이페이지 값(서버 프로필 캐시)에서 만든다. 아무 값도 없으면 보내지 않는다.
+const currentCoachingProfile = (): AiUserProfileDto | null => {
+  const p = useProfileStore.getState();
+  const profile: AiUserProfileDto = {
+    age: ageFromBirthDate(p.birthDate),
+    height: toNumberOrNull(p.height),
+    weight: toNumberOrNull(p.weight),
+    restingHeartRate: toNumberOrNull(p.restingHr),
+    lthr: toNumberOrNull(p.lthr),
+  };
+  return Object.values(profile).some((v) => v != null) ? profile : null;
+};
 
 export interface LiveCoachingResult {
   /** 가장 최근에 생성된 코칭 (코치 카드 표시용) */
@@ -35,7 +55,7 @@ export const useLiveCoaching = (
       const id = setInterval(() => {
         if (inFlight.current) return;
         inFlight.current = true;
-        createCoaching(getRef.current())
+        createCoaching({ profile: currentCoachingProfile(), ...getRef.current() })
           .then((c) => setCoachings((prev) => [...prev, c]))
           .catch(() => {
             // 콜드 스타트/네트워크 오류는 조용히 무시하고 다음 주기를 기다린다.

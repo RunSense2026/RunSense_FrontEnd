@@ -43,6 +43,22 @@ export interface AiCoachingRequestDto {
   leftFoot: AiFootDataDto;
   /** 오른발 센서 데이터 (필수) */
   rightFoot: AiFootDataDto;
+  /** 사용자 프로필 (선택) — 보내면 나이·체격·심박 기준에 맞춰 코칭한다 */
+  profile?: AiUserProfileDto | null;
+}
+
+/** 코칭 개인화용 사용자 프로필 — 모르는 값은 null */
+export interface AiUserProfileDto {
+  /** 만 나이 */
+  age: number | null;
+  /** 키 (cm) */
+  height: number | null;
+  /** 체중 (kg) */
+  weight: number | null;
+  /** 안정시 심박수 (bpm) */
+  restingHeartRate: number | null;
+  /** 젖산 역치 심박수 (bpm) */
+  lthr: number | null;
 }
 
 /** 코칭 조회/단건 응답 — GET /ai/coaching, GET·PATCH /ai/coaching/{id} (activity_id 포함) */
@@ -169,6 +185,15 @@ export interface FootDataWire {
   hitmap: FootHitmapWire;
 }
 
+/** 사용자 프로필 와이어 */
+export interface UserProfileContextWire {
+  age: number | null;
+  height: number | null;
+  weight: number | null;
+  resting_heart_rate: number | null;
+  lthr: number | null;
+}
+
 /** POST /ai/coaching 요청 본문 */
 export interface CoachingRequestWire {
   pace: number;
@@ -176,6 +201,7 @@ export interface CoachingRequestWire {
   cadence: number;
   left_foot: FootDataWire;
   right_foot: FootDataWire;
+  profile?: UserProfileContextWire | null;
 }
 
 /** 코칭 조회 응답 */

@@ -226,7 +226,7 @@ const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
       >
         <Text className="text-[11px] font-semibold" style={{ color: '#059669' }}>대기질</Text>
         <Text className="text-[22px] font-bold mt-[2px]" style={{ color: airColor }}>{airValue}</Text>
-        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 ug/m2</Text>
+        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 µg/m³</Text>
         <View
           className="flex-row items-center gap-[4px] px-[10px] py-[4px] rounded-full mt-[6px]"
           style={{ backgroundColor: airBadgeBg }}
@@ -591,7 +591,12 @@ const RecentRunCard = ({ date, weekday, dist, time, pace, form, hr, featured, on
 
       <View className="flex-row gap-[6px]">
         <RunMini label="페이스" value={pace} />
-        <RunMini label="폼" value={String(form)} accent={form >= 80 ? '#10b981' : '#f59e0b'} />
+        {/* 폼 점수 0 = 워치 없이 뛴 기록(미측정) */}
+        <RunMini
+          label="폼"
+          value={form > 0 ? String(form) : '--'}
+          accent={form <= 0 ? '#9b8cc5' : form >= 80 ? '#10b981' : '#f59e0b'}
+        />
         {hr != null && <RunMini label="평균 심박" value={String(hr)} unit="bpm" />}
       </View>
     </>

@@ -2,16 +2,21 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, Modal, ActivityIndicator, Alert } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import type { BluetoothDevice } from 'react-native-bluetooth-classic';
 
 import { DarkShell, DarkNavHeader, RSTabBar, type TabId } from '@/components/domain';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useWatchStore } from '@/stores/watchStore';
 import {
+  INSOLE_TRANSPORT,
   isBluetoothReady,
-  listBondedDevices,
+  findInsoles,
+  stopFindingInsoles,
   connectInsole,
   disconnectInsole,
+  canRecalibrate,
+  recalibrateInsole,
+  bleErrorMessage,
+  type InsoleCandidate,
 } from '@/bluetooth/insole';
 import { HEEL_STRIKE_THRESHOLD } from '@/utils/insoleMetrics';
 import type { FootSide, InsolePacket } from '@/types/insole';
@@ -23,6 +28,7 @@ interface FootConn {
   connected: boolean;
   deviceName: string | null;
   packet: InsolePacket | null;
+  battery: number | null;
 }
 
 export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
@@ -38,41 +44,71 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
 
   // 기기 선택 모달 상태
   const [pickerFoot, setPickerFoot] = useState<FootSide | null>(null);
-  const [bonded, setBonded] = useState<BluetoothDevice[]>([]);
+  const [candidates, setCandidates] = useState<InsoleCandidate[]>([]);
   const [scanning, setScanning] = useState(false);
   const [busyFoot, setBusyFoot] = useState<FootSide | null>(null);
 
   const openPicker = async (foot: FootSide) => {
     setPickerFoot(foot);
     setScanning(true);
-    setBonded([]);
+    setCandidates([]);
     try {
       if (!(await isBluetoothReady())) {
         setPickerFoot(null);
         Alert.alert('블루투스가 필요해요', '블루투스 권한을 허용하고 블루투스를 켜주세요.');
         return;
       }
-      setBonded(await listBondedDevices());
-    } catch {
+      await findInsoles(foot, setCandidates);
+    } catch (e) {
       setPickerFoot(null);
-      Alert.alert('오류', '페어링된 기기를 불러오지 못했어요. OS 설정에서 인솔을 먼저 페어링했는지 확인해주세요.');
+      Alert.alert(
+        '오류',
+        INSOLE_TRANSPORT[foot] === 'ble'
+          ? bleErrorMessage(e)
+          : '페어링된 기기를 불러오지 못했어요. OS 설정에서 인솔을 먼저 페어링했는지 확인해주세요.',
+      );
     } finally {
       setScanning(false);
     }
   };
 
-  const handleSelect = async (device: BluetoothDevice) => {
+  const closePicker = () => {
+    stopFindingInsoles();
+    setPickerFoot(null);
+  };
+
+  const handleSelect = async (candidate: InsoleCandidate) => {
     const foot = pickerFoot;
     if (!foot) return;
-    setPickerFoot(null);
+    closePicker();
     setBusyFoot(foot);
     try {
-      await connectInsole(foot, device.address);
+      await connectInsole(foot, candidate.id);
     } catch {
-      Alert.alert('연결 실패', `${device.name ?? device.address} 에 연결하지 못했어요.`);
+      Alert.alert('연결 실패', `${candidate.name ?? candidate.id} 에 연결하지 못했어요.`);
     } finally {
       setBusyFoot(null);
     }
+  };
+
+  // 영점 재조정 — 펌웨어가 약 1.5초간 무부하 값을 재므로 인솔에서 발을 뗀 상태여야 한다.
+  const handleRecalibrate = (foot: FootSide) => {
+    Alert.alert('영점 조정', '인솔에서 발을 떼고 아무것도 올려두지 않은 상태에서 진행해주세요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '조정',
+        onPress: async () => {
+          setBusyFoot(foot);
+          try {
+            await recalibrateInsole(foot);
+          } catch {
+            Alert.alert('영점 조정 실패', '인솔 연결 상태를 확인해주세요.');
+          } finally {
+            setBusyFoot(null);
+          }
+        },
+      },
+    ]);
   };
 
   const handleDisconnect = async (foot: FootSide) => {
@@ -133,6 +169,7 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
           busy={busyFoot === 'L'}
           onConnect={() => openPicker('L')}
           onDisconnect={() => handleDisconnect('L')}
+          onRecalibrate={canRecalibrate('L') ? () => handleRecalibrate('L') : undefined}
         />
         <InsoleCard
           side="R"
@@ -141,6 +178,7 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
           busy={busyFoot === 'R'}
           onConnect={() => openPicker('R')}
           onDisconnect={() => handleDisconnect('R')}
+          onRecalibrate={canRecalibrate('R') ? () => handleRecalibrate('R') : undefined}
         />
         <DeviceCard
           icon="♥"
@@ -162,10 +200,11 @@ export const DevicesScreen = ({ navigation }: ScreenProps<'Devices'>) => {
       <DevicePickerModal
         visible={pickerFoot != null}
         foot={pickerFoot}
-        devices={bonded}
+        devices={candidates}
         scanning={scanning}
         onSelect={handleSelect}
-        onClose={() => setPickerFoot(null)}
+        onRescan={() => pickerFoot && openPicker(pickerFoot)}
+        onClose={closePicker}
       />
 
       <RSTabBar active="settings" onChange={handleTabPress} />
@@ -181,11 +220,13 @@ interface InsoleCardProps {
   busy: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
+  /** BLE 인솔만 — 연결돼 있을 때 영점 재조정 버튼을 보인다 */
+  onRecalibrate?: () => void;
 }
 
-const InsoleCard = ({ side, name, conn, busy, onConnect, onDisconnect }: InsoleCardProps) => {
+const InsoleCard = ({ side, name, conn, busy, onConnect, onDisconnect, onRecalibrate }: InsoleCardProps) => {
   const model = conn.connected
-    ? conn.deviceName ?? `RunSense Nano · ${side}`
+    ? conn.deviceName ?? `RunSense-${side}`
     : '연결 안 됨 · 탭하여 연결';
 
   return (
@@ -218,11 +259,27 @@ const InsoleCard = ({ side, name, conn, busy, onConnect, onDisconnect }: InsoleC
           <View className="flex-row items-center gap-[6px] mb-[3px] flex-wrap">
             <Text className="text-[14px] font-bold text-white tracking-[-0.28px]">{name}</Text>
             <ConnBadge connected={conn.connected} />
+            {conn.connected && conn.battery != null && <BatteryBadge percent={conn.battery} />}
           </View>
           <Text className="text-[11px] font-medium" style={{ color: 'rgba(167,139,250,0.7)' }} numberOfLines={1}>
             {model}
           </Text>
         </View>
+
+        {conn.connected && onRecalibrate && (
+          <Pressable
+            onPress={onRecalibrate}
+            disabled={busy}
+            className="px-[10px] h-8 rounded-lg items-center justify-center"
+            style={{
+              backgroundColor: 'rgba(124,58,237,0.12)',
+              borderWidth: 0.5,
+              borderColor: 'rgba(167,139,250,0.35)',
+            }}
+          >
+            <Text className="text-[12px] font-bold" style={{ color: '#ddd6fe' }}>영점</Text>
+          </Pressable>
+        )}
 
         <Pressable
           onPress={conn.connected ? onDisconnect : onConnect}
@@ -265,6 +322,30 @@ const ConnBadge = ({ connected }: { connected: boolean }) => (
     </Text>
   </View>
 );
+
+// 리튬 배터리 잔량 — 20% 이하 빨강, 50% 이하 주황.
+const BatteryBadge = ({ percent }: { percent: number }) => {
+  const c =
+    percent <= 20
+      ? { fg: '#fca5a5', bg: 'rgba(239,68,68,0.14)', border: 'rgba(239,68,68,0.4)' }
+      : percent <= 50
+        ? { fg: '#fcd34d', bg: 'rgba(251,191,36,0.12)', border: 'rgba(251,191,36,0.4)' }
+        : { fg: '#6ee7b7', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)' };
+  const fill = (12 * percent) / 100;
+  return (
+    <View
+      className="px-[6px] py-[2px] rounded-full flex-row items-center gap-[3px]"
+      style={{ backgroundColor: c.bg, borderWidth: 0.5, borderColor: c.border }}
+    >
+      <Svg width={12} height={8} viewBox="0 0 24 14" fill="none">
+        <Path d="M2 2h17v10H2z" stroke={c.fg} strokeWidth={2.2} strokeLinejoin="round" />
+        <Path d="M22 5.5v3" stroke={c.fg} strokeWidth={2.2} strokeLinecap="round" />
+        <Path d={`M4.5 4.5h${fill}v5h-${fill}z`} fill={c.fg} />
+      </Svg>
+      <Text className="text-[9px] font-bold" style={{ color: c.fg }}>{percent}%</Text>
+    </View>
+  );
+};
 
 // ─── 정적 기기 카드 (Galaxy Watch 심박) ───────────────────────────
 interface DeviceCardProps {
@@ -310,76 +391,112 @@ const DeviceCard = ({ icon, name, model, connected = true, heart }: DeviceCardPr
   </View>
 );
 
-// ─── 페어링된 기기 선택 모달 ──────────────────────────────────────
+// ─── 인솔 선택 모달 (클래식: 페어링 목록 / BLE: 주변 스캔) ─────────
 interface DevicePickerModalProps {
   visible: boolean;
   foot: FootSide | null;
-  devices: BluetoothDevice[];
+  devices: InsoleCandidate[];
   scanning: boolean;
-  onSelect: (device: BluetoothDevice) => void;
+  onSelect: (device: InsoleCandidate) => void;
+  onRescan: () => void;
   onClose: () => void;
 }
 
-const DevicePickerModal = ({ visible, foot, devices, scanning, onSelect, onClose }: DevicePickerModalProps) => (
-  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-    <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose}>
-      <Pressable onPress={() => {}}>
-        <View
-          style={{
-            backgroundColor: '#150f2e',
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            paddingHorizontal: 20,
-            paddingTop: 12,
-            paddingBottom: 28,
-            borderWidth: 0.5,
-            borderColor: 'rgba(167,139,250,0.2)',
-            maxHeight: 420,
-          }}
-        >
-          <View className="self-center w-10 h-1 rounded-full mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
-          <Text className="text-[16px] font-bold text-white mb-1">
-            {foot === 'L' ? '왼발' : '오른발'} 인솔 연결
-          </Text>
-          <Text className="text-[11px] font-medium mb-3" style={{ color: 'rgba(167,139,250,0.7)' }}>
-            페어링된 기기에서 인솔을 선택하세요
-          </Text>
-
-          {scanning ? (
-            <View className="py-8 items-center">
-              <ActivityIndicator color="#a78bfa" />
-              <Text className="text-[12px] mt-2" style={{ color: 'rgba(167,139,250,0.7)' }}>기기를 불러오는 중…</Text>
-            </View>
-          ) : devices.length === 0 ? (
-            <Text className="text-[12px] py-8 text-center" style={{ color: 'rgba(167,139,250,0.7)' }}>
-              페어링된 기기가 없어요. OS 블루투스 설정에서 인솔(HC-06 등)을 먼저 페어링해주세요.
+const DevicePickerModal = ({ visible, foot, devices, scanning, onSelect, onRescan, onClose }: DevicePickerModalProps) => {
+  const isBle = foot != null && INSOLE_TRANSPORT[foot] === 'ble';
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onPress={onClose}>
+        <Pressable onPress={() => {}}>
+          <View
+            style={{
+              backgroundColor: '#150f2e',
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              paddingHorizontal: 20,
+              paddingTop: 12,
+              paddingBottom: 28,
+              borderWidth: 0.5,
+              borderColor: 'rgba(167,139,250,0.2)',
+              maxHeight: 420,
+            }}
+          >
+            <View className="self-center w-10 h-1 rounded-full mb-4" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
+            <Text className="text-[16px] font-bold text-white mb-1">
+              {foot === 'L' ? '왼발' : '오른발'} 인솔 연결
             </Text>
-          ) : (
-            <ScrollView style={{ maxHeight: 280 }}>
-              {devices.map((d) => (
-                <Pressable
-                  key={d.address}
-                  onPress={() => onSelect(d)}
-                  className="rounded-[12px] px-[14px] py-3 mb-2 flex-row items-center justify-between"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                    borderWidth: 0.5,
-                    borderColor: 'rgba(167,139,250,0.2)',
-                  }}
-                >
-                  <View className="flex-1">
-                    <Text className="text-[13px] font-bold text-white" numberOfLines={1}>{d.name ?? '이름 없음'}</Text>
-                    <Text className="text-[10px] font-medium mt-[2px]" style={{ color: 'rgba(167,139,250,0.6)' }}>{d.address}</Text>
-                  </View>
-                  <Text className="text-[12px] font-bold text-purple-300">연결 →</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          )}
-        </View>
+            <Text className="text-[11px] font-medium mb-3" style={{ color: 'rgba(167,139,250,0.7)' }}>
+              {isBle ? '주변의 RunSense 인솔을 선택하세요 (페어링 필요 없음)' : '페어링된 기기에서 인솔을 선택하세요'}
+            </Text>
+
+            {devices.length === 0 ? (
+              scanning ? (
+                <View className="py-8 items-center">
+                  <ActivityIndicator color="#a78bfa" />
+                  <Text className="text-[12px] mt-2" style={{ color: 'rgba(167,139,250,0.7)' }}>
+                    {isBle ? '주변 인솔을 찾는 중…' : '기기를 불러오는 중…'}
+                  </Text>
+                </View>
+              ) : (
+                <View className="py-6 items-center">
+                  <Text className="text-[12px] text-center" style={{ color: 'rgba(167,139,250,0.7)' }}>
+                    {isBle
+                      ? '주변에서 인솔을 찾지 못했어요. 인솔 전원을 켜고 휴대폰 가까이에 둔 뒤 다시 찾아주세요.'
+                      : '페어링된 기기가 없어요. OS 블루투스 설정에서 인솔(HC-06 등)을 먼저 페어링해주세요.'}
+                  </Text>
+                  {isBle && <RescanButton onPress={onRescan} />}
+                </View>
+              )
+            ) : (
+              <ScrollView style={{ maxHeight: 280 }}>
+                {devices.map((d) => (
+                  <Pressable
+                    key={d.id}
+                    onPress={() => onSelect(d)}
+                    className="rounded-[12px] px-[14px] py-3 mb-2 flex-row items-center justify-between"
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                      borderWidth: 0.5,
+                      borderColor: 'rgba(167,139,250,0.2)',
+                    }}
+                  >
+                    <View className="flex-1">
+                      <Text className="text-[13px] font-bold text-white" numberOfLines={1}>{d.name ?? '이름 없음'}</Text>
+                      <Text className="text-[10px] font-medium mt-[2px]" style={{ color: 'rgba(167,139,250,0.6)' }}>{d.id}</Text>
+                    </View>
+                    <Text className="text-[12px] font-bold text-purple-300">연결 →</Text>
+                  </Pressable>
+                ))}
+                {isBle &&
+                  (scanning ? (
+                    <View className="flex-row items-center justify-center gap-2 py-2">
+                      <ActivityIndicator size="small" color="#a78bfa" />
+                      <Text className="text-[11px]" style={{ color: 'rgba(167,139,250,0.7)' }}>더 찾는 중…</Text>
+                    </View>
+                  ) : (
+                    <RescanButton onPress={onRescan} />
+                  ))}
+              </ScrollView>
+            )}
+          </View>
+        </Pressable>
       </Pressable>
-    </Pressable>
-  </Modal>
+    </Modal>
+  );
+};
+
+const RescanButton = ({ onPress }: { onPress: () => void }) => (
+  <Pressable
+    onPress={onPress}
+    className="self-center mt-3 px-[14px] h-8 rounded-lg items-center justify-center"
+    style={{
+      backgroundColor: 'rgba(124,58,237,0.18)',
+      borderWidth: 0.5,
+      borderColor: 'rgba(167,139,250,0.45)',
+    }}
+  >
+    <Text className="text-[12px] font-bold" style={{ color: '#ddd6fe' }}>다시 찾기</Text>
+  </Pressable>
 );
 
 // ─── 실시간 센서값 패널 ───────────────────────────────────────────

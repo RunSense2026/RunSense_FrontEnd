@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import { useWatchRunLink } from '@/hooks/useWatchRunLink';
 import { useResolvedLocation } from '@/hooks/useResolvedLocation';
 import { useInsoleStore } from '@/stores/insoleStore';
 import { useMyLthr } from '@/stores/profileStore';
-import { footCoachingPayload } from '@/utils/insoleMetrics';
+import { cadenceFromSteps, footAverageToData, footCoachingPayload } from '@/utils/insoleMetrics';
 
 import type { ScreenProps } from '@/types/navigation';
 
@@ -45,6 +45,18 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   // 시작 시점(0초·0km)부터 실시간 누적되는 경과 시간·거리.
   const { tick, sec, distKm, paceSpk, splits } = useRunSession(paused);
 
+  // 리포트에 저장할 러닝 전체 인솔 평균은 이 화면에 들어온 시점부터 쌓는다.
+  useEffect(() => {
+    useInsoleStore.getState().resetSessionAverages();
+  }, []);
+
+  // 인솔이 연결돼 있으면 걸음 시각으로 케이던스를 계산한다(1초마다). 미연결이면 0.
+  const insoleCadence = useMemo(() => {
+    const { L, R, stepTimes } = useInsoleStore.getState();
+    return L.connected || R.connected ? cadenceFromSteps(stepTimes, Date.now()) : 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick]);
+
   // 러닝 중 1분 간격으로 AI 코칭 생성 → 최신 코칭을 코치 카드에 표시.
   // 직전 60초 구간의 양발 압력 평균(0~100 정규화)을 왼발·오른발 모두 실어 보낸다.
   // (심박·케이던스는 아래 useWatchRunLink 값을 ref 로 읽는다 — 호출 시점의 최신값)
@@ -65,7 +77,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
   // 심박·케이던스 — 갤럭시 워치가 연결돼 있으면 워치 센서값, 아니면 시뮬레이션.
   // 거리 모드 목표 페이스는 워치 페이스 링 기준으로도 쓰인다.
-  const watch = useWatchRunLink(tick, liveCoaching, route.params?.targetPaceSpk);
+  const watch = useWatchRunLink(tick, liveCoaching, route.params?.targetPaceSpk, insoleCadence);
   const { hr, cad } = watch;
   metricsRef.current = { hr, cad };
   // 심박 존은 마이페이지에 저장된 LTHR 기준(미설정 시 기본값).
@@ -206,8 +218,12 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         onCancel={() => setEndOpen(false)}
         onConfirm={() => {
           setEndOpen(false);
-          navigation.navigate('Report', {
+          const footAvg = useInsoleStore.getState().getSessionAverages();
+          // navigate 는 스택에 이미 리포트(예: 기록 탭에서 연 리포트 → 탭바로 러닝 시작)가 있으면
+          // 그 화면으로 돌아가 이전 기록이 보인다. 러닝 화면을 새 리포트로 교체해 항상 새로 띄운다.
+          navigation.replace('Report', {
             run: {
+              footData: { left: footAverageToData(footAvg.L), right: footAverageToData(footAvg.R) },
               distanceKm: distKm,
               durationSec: sec,
               paceSpk,

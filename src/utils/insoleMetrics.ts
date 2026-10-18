@@ -117,6 +117,13 @@ export const packetToFootData = (packet: InsolePacket | null): AiFootDataDto =>
   packet ? toFootData({ avg: packet.avg, total: packet.total }) : NEUTRAL_FOOT;
 
 /**
+ * 러닝 전체 평균(insoleStore.getSessionAverages) → 리포트 저장용 발 데이터.
+ * 코칭과 달리 중립값으로 채우지 않는다 — 패킷이 없던 발은 null(미측정)로 둔다.
+ */
+export const footAverageToData = (data: FootAvg | null): AiFootDataDto | null =>
+  data ? toFootData(data) : null;
+
+/**
  * 양발 구간 평균 → AI 코칭 요청의 left_foot / right_foot.
  * 예전에는 압력이 큰 쪽 한 발만 보냈지만, 서버가 양발을 모두 필수로 받으므로 둘 다 채운다.
  * 한쪽 인솔만 연결된 경우 반대쪽은 중립값으로 채워 요청이 거절되지 않게 한다.

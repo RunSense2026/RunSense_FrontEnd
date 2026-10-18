@@ -15,6 +15,8 @@ interface FootState {
   deviceName: string | null;
   address: string | null;
   packet: InsolePacket | null;
+  /** 배터리 잔량(%) — BLE 인솔만 보낸다. 모르면 null */
+  battery: number | null;
 }
 
 // 뒤꿈치 압력의 상승 엣지 검출용 내부 상태(발별).
@@ -48,6 +50,8 @@ interface InsoleState {
   stepTimes: number[];
   _heel: Record<FootSide, HeelEdge>;
   _accum: Record<FootSide, FootAccum>;
+  /** 러닝 전체 평균용 누적기(발별) — drain 으로 비워지지 않고 resetSessionAverages 로만 비운다 */
+  _session: Record<FootSide, FootAccum>;
   /** 화면 표시용 packet 을 마지막으로 갱신한 시각(발별, ms) — 갱신 스로틀용 */
   _lastShownMs: Record<FootSide, number>;
 
@@ -56,6 +60,8 @@ interface InsoleState {
     foot: FootSide,
     info: { connected: boolean; deviceName?: string | null; address?: string | null },
   ) => void;
+  /** 배터리 잔량(%) 갱신 */
+  setBattery: (foot: FootSide, percent: number) => void;
   /** 인솔 패킷 수신 → 저장 + 뒤꿈치 기반 걸음 검출 + 구간 평균 누적 */
   ingest: (packet: InsolePacket) => void;
   /** 한쪽 발 상태 초기화(연결 해제 시) */
@@ -65,6 +71,10 @@ interface InsoleState {
    * AI 코칭 전송 주기(60초)마다 호출해 '직전 구간 평균'을 얻는 용도.
    */
   drainFootAverages: () => Record<FootSide, FootAverage | null>;
+  /** 러닝 시작 시 호출 — 러닝 전체 평균 누적기를 비운다 */
+  resetSessionAverages: () => void;
+  /** 러닝 시작(resetSessionAverages) 이후 양발 압력 평균. 받은 패킷이 없는 발은 null */
+  getSessionAverages: () => Record<FootSide, FootAverage | null>;
 }
 
 const emptyFoot = (): FootState => ({
@@ -72,9 +82,22 @@ const emptyFoot = (): FootState => ({
   deviceName: null,
   address: null,
   packet: null,
+  battery: null,
 });
 
 const emptyAccum = (): FootAccum => ({ sumAvg: [], sumTotal: 0, count: 0 });
+
+// 누적기에 패킷 1개를 더한다 — 센서별 압력/​total/​패킷 수.
+const addPacket = (accum: FootAccum, packet: InsolePacket): FootAccum => ({
+  sumAvg: packet.avg.map((v, i) => (accum.sumAvg[i] ?? 0) + v),
+  sumTotal: accum.sumTotal + packet.total,
+  count: accum.count + 1,
+});
+
+const averageOf = (a: FootAccum): FootAverage | null =>
+  a.count > 0
+    ? { avg: a.sumAvg.map((s) => s / a.count), total: a.sumTotal / a.count }
+    : null;
 
 export const useInsoleStore = create<InsoleState>((set, get) => ({
   L: emptyFoot(),
@@ -82,6 +105,7 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
   stepTimes: [],
   _heel: { L: { above: false, lastStepMs: 0 }, R: { above: false, lastStepMs: 0 } },
   _accum: { L: emptyAccum(), R: emptyAccum() },
+  _session: { L: emptyAccum(), R: emptyAccum() },
   _lastShownMs: { L: 0, R: 0 },
 
   setConnection: (foot, info) =>
@@ -92,6 +116,12 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
         deviceName: info.deviceName ?? (info.connected ? state[foot].deviceName : null),
         address: info.address ?? (info.connected ? state[foot].address : null),
       };
+      return foot === 'L' ? { L: next } : { R: next };
+    }),
+
+  setBattery: (foot, percent) =>
+    set((state) => {
+      const next: FootState = { ...state[foot], battery: Math.max(0, Math.min(100, percent)) };
       return foot === 'L' ? { L: next } : { R: next };
     }),
 
@@ -116,13 +146,9 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
         nextEdge.above = false;
       }
 
-      // 구간 평균용 누적 — 센서별 압력/​total/​패킷 수를 더한다.
-      const accum = state._accum[foot];
-      const nextAccum: FootAccum = {
-        sumAvg: packet.avg.map((v, i) => (accum.sumAvg[i] ?? 0) + v),
-        sumTotal: accum.sumTotal + packet.total,
-        count: accum.count + 1,
-      };
+      // 구간 평균(코칭용)·러닝 전체 평균(리포트 저장용) 누적.
+      const nextAccum = addPacket(state._accum[foot], packet);
+      const nextSession = addPacket(state._session[foot], packet);
 
       // 화면 표시용 packet 은 스로틀 — 마지막 갱신 후 DISPLAY_THROTTLE_MS 지났을 때만
       // L/R 을 새로 써서 구독 컴포넌트(무거운 SVG 화면)가 그 빈도로만 리렌더되게 한다.
@@ -135,6 +161,7 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
         stepTimes,
         _heel: { ...state._heel, [foot]: nextEdge },
         _accum: { ...state._accum, [foot]: nextAccum },
+        _session: { ...state._session, [foot]: nextSession },
       };
     }),
 
@@ -146,15 +173,18 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
 
   drainFootAverages: () => {
     const { _accum } = get();
-    const build = (a: FootAccum): FootAverage | null =>
-      a.count > 0
-        ? { avg: a.sumAvg.map((s) => s / a.count), total: a.sumTotal / a.count }
-        : null;
     const result: Record<FootSide, FootAverage | null> = {
-      L: build(_accum.L),
-      R: build(_accum.R),
+      L: averageOf(_accum.L),
+      R: averageOf(_accum.R),
     };
     set({ _accum: { L: emptyAccum(), R: emptyAccum() } });
     return result;
+  },
+
+  resetSessionAverages: () => set({ _session: { L: emptyAccum(), R: emptyAccum() } }),
+
+  getSessionAverages: () => {
+    const { _session } = get();
+    return { L: averageOf(_session.L), R: averageOf(_session.R) };
   },
 }));

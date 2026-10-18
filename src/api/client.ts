@@ -62,8 +62,21 @@ const reissueTokens = async (): Promise<string | null> => {
   }
 };
 
+// 백엔드는 한동안 요청이 없다가 들어온 첫 요청에 500 을 내고, 곧바로 다시 보내면 성공하는 경우가 잦다
+// (2026-10-19 실측 — 로그인·목록·상세 모두). 결과가 같은 GET 만 500 일 때 한 번 더 시도한다.
+// 502/504 는 공공데이터 등 외부 연동 오류라 여기서 재시도하지 않는다(public.ts 가 따로 재시도).
+const SERVER_ERROR_RETRY_DELAY_MS = 500;
+
 const handleAuthError = async (client: AxiosInstance, error: AxiosError): Promise<unknown> => {
-  const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+  const original = error.config as
+    | (InternalAxiosRequestConfig & { _retry?: boolean; _retried500?: boolean })
+    | undefined;
+
+  if (error.response?.status === 500 && original?.method === 'get' && !original._retried500) {
+    original._retried500 = true;
+    await new Promise((r) => setTimeout(r, SERVER_ERROR_RETRY_DELAY_MS));
+    return client(original);
+  }
 
   const isUnauthorized = error.response?.status === 401;
   const canRetry = original && !original._retry && !!refreshToken.get();
