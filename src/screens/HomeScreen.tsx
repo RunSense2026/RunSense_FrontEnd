@@ -226,7 +226,7 @@ const AirWeatherCard = ({ refreshKey }: { refreshKey: number }) => {
       >
         <Text className="text-[11px] font-semibold" style={{ color: '#059669' }}>대기질</Text>
         <Text className="text-[22px] font-bold mt-[2px]" style={{ color: airColor }}>{airValue}</Text>
-        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 ug/m2</Text>
+        <Text className="text-[9px] font-medium mt-[2px]" style={{ color: '#059669' }}>PM2.5 µg/m³</Text>
         <View
           className="flex-row items-center gap-[4px] px-[10px] py-[4px] rounded-full mt-[6px]"
           style={{ backgroundColor: airBadgeBg }}

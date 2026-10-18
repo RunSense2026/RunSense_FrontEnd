@@ -10,6 +10,9 @@ import type { ScreenProps } from '@/types/navigation';
 
 type Preset = 'light' | 'balanced' | 'ambitious';
 
+/** 예상 시간 계산 기준 페이스 (분/km) — 안내 문구의 5'30"/km */
+const ASSUMED_PACE_MIN_PER_KM = 5.5;
+
 export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSetup'>) => {
   const { targetKm, daysPerWeek, preferredDays, setGoal } = useWeeklyGoalStore();
   const [preset, setPreset] = useState<Preset>('balanced');
@@ -40,6 +43,9 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
   };
 
   const perRun = (km / days).toFixed(1);
+  // 예상 시간은 안내 문구의 기준 페이스(5'30"/km)로 계산한다.
+  const totalMin = km * ASSUMED_PACE_MIN_PER_KM;
+  const perRunMin = Math.round(totalMin / days);
 
   return (
     <LightShell>
@@ -239,12 +245,12 @@ export const WeeklyGoalSetupScreen = ({ navigation }: ScreenProps<'WeeklyGoalSet
           </Text>
           <View className="flex-row gap-2 mt-[10px]">
             <ProjStat value={`${Math.round(km * 65)}`} label="kcal/주" />
-            <ProjStat value={`${((km * 4.2) / 60).toFixed(1)}h`} label="총 시간" />
+            <ProjStat value={`${(totalMin / 60).toFixed(1)}h`} label="총 시간" />
           </View>
           <View className="mt-[10px] px-[10px] py-2 rounded-[10px]" style={{ backgroundColor: 'rgba(255,255,255,0.5)' }}>
             <Text className="text-[11px] leading-[17px] font-medium" style={{ color: '#4a3e7a' }}>
               현재 페이스(<Text className="text-purple-500 font-bold">5'30"/km</Text>) 기준으로 약{' '}
-              <Text className="text-purple-500 font-bold">{Math.round((km / 5) * 28)}분</Text>씩 {days}회 뛰면 달성돼요.
+              <Text className="text-purple-500 font-bold">{perRunMin}분</Text>씩 {days}회 뛰면 달성돼요.
             </Text>
           </View>
         </LinearGradient>
