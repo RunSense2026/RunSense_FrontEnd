@@ -15,6 +15,8 @@ interface FootState {
   deviceName: string | null;
   address: string | null;
   packet: InsolePacket | null;
+  /** 배터리 잔량(%) — BLE 인솔만 보낸다. 모르면 null */
+  battery: number | null;
 }
 
 // 뒤꿈치 압력의 상승 엣지 검출용 내부 상태(발별).
@@ -56,6 +58,8 @@ interface InsoleState {
     foot: FootSide,
     info: { connected: boolean; deviceName?: string | null; address?: string | null },
   ) => void;
+  /** 배터리 잔량(%) 갱신 */
+  setBattery: (foot: FootSide, percent: number) => void;
   /** 인솔 패킷 수신 → 저장 + 뒤꿈치 기반 걸음 검출 + 구간 평균 누적 */
   ingest: (packet: InsolePacket) => void;
   /** 한쪽 발 상태 초기화(연결 해제 시) */
@@ -72,6 +76,7 @@ const emptyFoot = (): FootState => ({
   deviceName: null,
   address: null,
   packet: null,
+  battery: null,
 });
 
 const emptyAccum = (): FootAccum => ({ sumAvg: [], sumTotal: 0, count: 0 });
@@ -92,6 +97,12 @@ export const useInsoleStore = create<InsoleState>((set, get) => ({
         deviceName: info.deviceName ?? (info.connected ? state[foot].deviceName : null),
         address: info.address ?? (info.connected ? state[foot].address : null),
       };
+      return foot === 'L' ? { L: next } : { R: next };
+    }),
+
+  setBattery: (foot, percent) =>
+    set((state) => {
+      const next: FootState = { ...state[foot], battery: Math.max(0, Math.min(100, percent)) };
       return foot === 'L' ? { L: next } : { R: next };
     }),
 
