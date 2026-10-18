@@ -2,17 +2,22 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 
-import type { LthrAnalyzeResponseDto } from '@/types/aiApi';
+import type { AiFootDataDto, LthrAnalyzeResponseDto } from '@/types/aiApi';
 
 // 러닝 종료 시 대시보드에서 리포트로 넘기는 실제 세션 요약 값.
-// (대시보드별로 측정 항목이 달라 모두 optional — 누락 시 ReportScreen 에서 기본값으로 대체)
+// 측정 기기(워치·인솔)가 없어 재지 못한 값은 비워 둔다 — ReportScreen 은 '--'/미측정으로 표시한다.
 export interface RunSummaryParam {
   distanceKm?: number;
   durationSec?: number;
   paceSpk?: number; // 초/km
+  /** 평균 심박 — 워치 실측값만 (시뮬레이션 값은 넣지 않는다) */
   avgHeartRate?: number;
+  /** 평균 케이던스 — 워치 또는 인솔 실측값만 */
   cadence?: number;
+  /** 폼 점수 — 워치가 계산한 값만 */
   formScore?: number;
+  /** 러닝 전체 인솔 압력 평균 (발별, 인솔 데이터가 없던 발은 null) */
+  footData?: { left: AiFootDataDto | null; right: AiFootDataDto | null };
   /** 러닝 중 수집된 km별 구간 페이스(초/km) — 스플릿 차트·백엔드 저장에 사용 */
   splits?: Array<{ km: number; paceSec: number }>;
   /** 러닝 중 생성된 AI 코칭 목록 — buildRunPayload 에서 백엔드 저장에 사용 */

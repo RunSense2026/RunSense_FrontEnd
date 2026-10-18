@@ -591,7 +591,12 @@ const RecentRunCard = ({ date, weekday, dist, time, pace, form, hr, featured, on
 
       <View className="flex-row gap-[6px]">
         <RunMini label="페이스" value={pace} />
-        <RunMini label="폼" value={String(form)} accent={form >= 80 ? '#10b981' : '#f59e0b'} />
+        {/* 폼 점수 0 = 워치 없이 뛴 기록(미측정) */}
+        <RunMini
+          label="폼"
+          value={form > 0 ? String(form) : '--'}
+          accent={form <= 0 ? '#9b8cc5' : form >= 80 ? '#10b981' : '#f59e0b'}
+        />
         {hr != null && <RunMini label="평균 심박" value={String(hr)} unit="bpm" />}
       </View>
     </>

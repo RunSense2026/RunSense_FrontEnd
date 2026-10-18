@@ -9,14 +9,16 @@ import { LightShell, RSTabBar, type TabId } from '@/components/domain';
 import { FOOT_PATH, footPositions } from '@/components/domain/FootPressure';
 import { saveRun, readRun, deleteRun, createCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useMyLthr, useProfileStore } from '@/stores/profileStore';
 import type {
+  FootSensorDataCreateRequestDto,
   RunningActivityCreateRequestDto,
   RunningActivityDetailResponseDto,
   FootSensorDataResponseDto,
 } from '@/types/api';
-import type { AiCoachingReportDto } from '@/types/aiApi';
+import type { AiCoachingReportDto, AiFootDataDto } from '@/types/aiApi';
 
-import { fmtPace, fmtTime, secToHms, spkToPace } from '@/utils/format';
+import { fmtPace, fmtTime, hrZone, secToHms, spkToPace } from '@/utils/format';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
 import type { ScreenProps, RunSummaryParam } from '@/types/navigation';
 
@@ -30,14 +32,55 @@ const paceToSeconds = (pace: string): number => {
 };
 
 // 갓 뛴 리포트인데 세션 값이 없을 때 쓰는 목업 기본값. (실데이터 연동 시 이 한 곳만 교체)
+// 심박·케이던스·폼 점수처럼 기기가 있어야 재는 값은 목업으로 채우지 않는다 — 없으면 미측정.
 const MOCK_RUN = {
   distanceKm: 5.24,
   durationSec: 1722, // 28:42
   paceSpk: 329, // ~5'29"
-  avgHeartRate: 154,
-  cadence: 178,
-  formScore: 84,
 };
+
+/** 측정 기기가 없어 재지 못한 값의 표시·저장 문구 */
+const UNMEASURED = '미측정';
+const MUTED_TEXT = '#9b8cc5';
+
+/** 달리기 칼로리 추정 계수 (kcal / kg / km) */
+const KCAL_PER_KG_KM = 1.036;
+
+/** 권장 최소 케이던스 (spm) */
+const GOOD_CADENCE_SPM = 170;
+
+// 인솔 회내 유형(영문, insoleMetrics) → 화면·저장용 한글
+const PRONATION_LABELS: Record<string, string> = {
+  overpronation: '과내전',
+  neutral: '중립',
+  supination: '회외',
+};
+
+// 한쪽 발 실측 데이터 → 백엔드 발 센서 데이터. 인솔 데이터가 없던 발은 미측정으로 보낸다.
+const toFootSensorData = (
+  footSide: 'Left' | 'Right',
+  foot: AiFootDataDto | null,
+): FootSensorDataCreateRequestDto =>
+  foot
+    ? {
+        footSide,
+        pronationType: PRONATION_LABELS[foot.pronationType ?? ''] ?? UNMEASURED,
+        heelStrikeRate: foot.heelStrikeRate ?? 0,
+        hitmapJson: JSON.stringify({
+          forefoot_left: foot.hitmap.forefootLeft,
+          forefoot_right: foot.hitmap.forefootRight,
+          midfoot_left: foot.hitmap.midfootLeft,
+          midfoot_right: foot.hitmap.midfootRight,
+          heel: foot.hitmap.heel,
+        }),
+      }
+    : { footSide, pronationType: UNMEASURED, heelStrikeRate: 0, hitmapJson: '{}' };
+
+// 러닝 중 수집한 양발 데이터 → 백엔드는 좌/우 정확히 2개를 받는다.
+const buildFootSensorData = (footData?: RunSummaryParam['footData']): FootSensorDataCreateRequestDto[] => [
+  toFootSensorData('Left', footData?.left ?? null),
+  toFootSensorData('Right', footData?.right ?? null),
+];
 
 const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -125,9 +168,33 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         .map((s) => ({ km: Number(s.lapNumber), pace: paceToSeconds(s.lapPace), label: s.lapPace }))
     : (runSummary?.splits ?? []).map((s) => ({ km: s.km, pace: s.paceSec, label: fmtPace(s.paceSec) }));
 
+  // 히트맵·프로네이션: 저장된 기록은 서버 값, 갓 뛴 러닝은 저장할 때와 같은 변환으로 만든 값.
+  const footSensorData: FootSensorDataResponseDto[] | undefined = detail
+    ? detail.footSensorData
+    : runSummary
+    ? buildFootSensorData(runSummary.footData).map((f, i) => ({ ...f, sensorDataId: i }))
+    : undefined;
+
+  // 하단 지표 — 실측값만 쓴다. 저장된 기록의 심박은 구간 기록의 심박 평균(0은 미측정이라 제외).
+  const lthr = useMyLthr();
+  const weightKg = parseFloat(useProfileStore((s) => s.weight));
+  const lapHeartRates = detail?.lapSplits.map((s) => s.avgHeartRate).filter((v) => v > 0) ?? [];
+  const avgHeartRate = detail
+    ? lapHeartRates.length > 0
+      ? Math.round(lapHeartRates.reduce((a, b) => a + b, 0) / lapHeartRates.length)
+      : undefined
+    : runSummary?.avgHeartRate;
+  // 케이던스는 백엔드에 저장 항목이 없어 갓 뛴 러닝에서만 보인다.
+  const cadence = detail ? undefined : runSummary?.cadence;
+  const kcal =
+    distanceKm != null && distanceKm > 0 && weightKg > 0
+      ? Math.round(weightKg * distanceKm * KCAL_PER_KG_KM)
+      : undefined;
+  const hrZoneInfo = avgHeartRate != null ? hrZone(avgHeartRate, lthr) : null;
+
   // AI 요약 항목: 갓 뛴 러닝은 AI 서버가 만든 리포트, 저장된 기록은 백엔드가 저장 시 정리해 둔
   // 요약 항목(detail.aiCoachings — focusPoint=제목, feedbackText=설명)을 쓴다.
-  // 둘 다 없으면 CoachSummaryCard 내부 목업이 표시된다.
+  // 둘 다 없으면 CoachSummaryCard 가 '코칭 기록 없음'을 표시한다.
   const coachTitle = report?.summaryTitle;
   const coachItems = report
     ? report.items?.map((it) => ({
@@ -340,7 +407,7 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
               <Text className="text-[10px] font-bold tracking-[0.6px] uppercase" style={{ color: 'rgba(255,255,255,0.7)' }}>
                 새 기록
               </Text>
-              <Text className="text-[14px] text-white font-bold mt-[1px]">5km 최고 페이스 갱신!</Text>
+              <Text className="text-[14px] text-white font-bold mt-[1px]">5km 이상 완주!</Text>
             </View>
           </LinearGradient>
         )}
@@ -359,20 +426,46 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         )}
 
         <ReportCard title="착지 히트맵" subtitle="발바닥 압력 분포">
-          <FootHeatmap footSensorData={detail?.footSensorData} loading={loadingSaved} />
+          <FootHeatmap footSensorData={footSensorData} loading={loadingSaved} />
         </ReportCard>
 
         <ReportCard title="프로네이션 분석" subtitle="발의 회내·회외 정도">
-          <Pronation footSensorData={detail?.footSensorData} loading={loadingSaved} />
+          <Pronation footSensorData={footSensorData} loading={loadingSaved} />
         </ReportCard>
 
         <CoachSummaryCard title={coachTitle} items={coachItems} generating={reportGenerating} loading={loadingSaved} />
 
         <View className="flex-row gap-2 mt-3 flex-wrap">
-          <ReportMini label="평균 심박" value={loadingSaved ? '--' : String(runSummary?.avgHeartRate ?? MOCK_RUN.avgHeartRate)} unit="bpm" trend="Z2 유산소" trendColor="#6ee7b7" />
-          <ReportMini label="케이던스" value={loadingSaved ? '--' : String(runSummary?.cadence ?? MOCK_RUN.cadence)} unit="spm" trend="▲ 적정 범위" trendColor="#10b981" />
-          <ReportMini label="고도 변화" value={loadingSaved ? '--' : '+24'} unit="m" trend="평지 코스" trendColor="#7c3aed" />
-          <ReportMini label="칼로리" value={loadingSaved ? '--' : '312'} unit="kcal" trend="목표 87%" trendColor="#7c3aed" />
+          <ReportMini
+            label="평균 심박"
+            value={loadingSaved || avgHeartRate == null ? '--' : String(avgHeartRate)}
+            unit="bpm"
+            trend={loadingSaved ? '' : hrZoneInfo ? hrZoneInfo.label : `${UNMEASURED} (워치 필요)`}
+            trendColor={hrZoneInfo ? hrZoneInfo.color : MUTED_TEXT}
+          />
+          <ReportMini
+            label="케이던스"
+            value={loadingSaved || cadence == null ? '--' : String(cadence)}
+            unit="spm"
+            trend={
+              loadingSaved
+                ? ''
+                : cadence == null
+                ? UNMEASURED
+                : cadence >= GOOD_CADENCE_SPM
+                ? '▲ 적정 범위'
+                : `${GOOD_CADENCE_SPM}spm 이상 권장`
+            }
+            trendColor={cadence == null ? MUTED_TEXT : cadence >= GOOD_CADENCE_SPM ? '#10b981' : '#f59e0b'}
+          />
+          <ReportMini label="고도 변화" value="--" unit="m" trend={loadingSaved ? '' : UNMEASURED} trendColor={MUTED_TEXT} />
+          <ReportMini
+            label="칼로리"
+            value={loadingSaved || kcal == null ? '--' : String(kcal)}
+            unit="kcal"
+            trend={loadingSaved ? '' : kcal != null ? '체중·거리 기준 추정' : weightKg > 0 ? '' : '체중 입력 필요'}
+            trendColor={MUTED_TEXT}
+          />
         </View>
       </ScrollView>
       <RSTabBar active="log" onChange={handleTabPress} />
@@ -412,8 +505,8 @@ const pickSpread = <T,>(items: T[], max: number): T[] =>
     ? items
     : Array.from({ length: max }, (_, i) => items[Math.round((i * (items.length - 1)) / (max - 1))]);
 
-// 러닝 저장 요청 본문을 구성한다. 실제 세션 값(run)이 있으면 상위 지표(거리·시간·페이스·폼)는
-// 그 값으로 채우고, 구간/발센서 등 세부 항목은 (아직 실데이터가 없어) 목업으로 둔다.
+// 러닝 저장 요청 본문을 구성한다. 측정 기기가 없어 재지 못한 값은 목업 대신 미측정으로 보낸다
+// (백엔드 필수 필드라 폼 점수·심박은 0, 발 센서는 pronationType '미측정' + 빈 히트맵).
 const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto => {
   // 평균 페이스(초/km) 대비 편차로 구간 상태를 정한다: ±30초 Green, ±1분 Yellow, 1분 초과 Red.
   const avgPaceSec = run?.paceSpk ?? 0;
@@ -431,27 +524,14 @@ const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto
     distance: run?.distanceKm ?? MOCK_RUN.distanceKm,
     time: secToHms(run?.durationSec ?? MOCK_RUN.durationSec),
     pace: spkToPace(run?.paceSpk ?? MOCK_RUN.paceSpk),
-    formScore: run?.formScore ?? MOCK_RUN.formScore,
+    formScore: run?.formScore ?? 0,
     lapSplits: liveSplits.map((s) => ({
       lapNumber: s.km,
       lapPace: spkToPace(s.paceSec),
       avgHeartRate: run?.avgHeartRate ?? 0,
       paceStatue: paceStatue(s.paceSec),
     })),
-    footSensorData: [
-      {
-        footSide: 'Left',
-        pronationType: '약간 과내전',
-        heelStrikeRate: 62,
-        hitmapJson: JSON.stringify({ forefoot_left: 20, forefoot_right: 25, midfoot_left: 18, midfoot_right: 17, heel: 46 }),
-      },
-      {
-        footSide: 'Right',
-        pronationType: '중립',
-        heelStrikeRate: 58,
-        hitmapJson: JSON.stringify({ forefoot_left: 23, forefoot_right: 22, midfoot_left: 19, midfoot_right: 18, heel: 44 }),
-      },
-    ],
+    footSensorData: buildFootSensorData(run?.footData),
     aiCoachings: pickSpread(run?.coachings ?? [], MAX_SAVED_COACHINGS).map((c) => ({
       feedbackText: c.feedbackText,
       focusPoint: c.focusPoint ?? '',
@@ -576,7 +656,8 @@ const NoDataHint = ({ dark }: { dark?: boolean }) => (
   </View>
 );
 
-type FootLevel = 'high' | 'mid' | 'low';
+// none = 인솔 데이터가 없는 발(미측정)
+type FootLevel = 'high' | 'mid' | 'low' | 'none';
 // hitmapJson 의 실제 5개 구간: 앞발 좌/우, 중족 좌/우, 뒤꿈치.
 type FootZone = 'forefoot_left' | 'forefoot_right' | 'midfoot_left' | 'midfoot_right' | 'heel';
 type FootDot = { x: number; y: number; r: number; level: FootLevel };
@@ -587,15 +668,6 @@ const FOOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_right', 'midfoot_left
 // 각 점에 매칭되는 hitmapJson 구간(색 결정용)과 점 반지름.
 const DOT_ZONES: FootZone[] = ['forefoot_left', 'forefoot_left', 'forefoot_right', 'midfoot_left', 'heel'];
 const DOT_RADII = [10, 9, 9, 9, 12];
-
-// 데이터가 없을 때(갓 뛴 리포트 등) 쓰는 목업 압력 분포(%).
-const MOCK_HITMAP: Record<FootZone, number> = {
-  forefoot_left: 20,
-  forefoot_right: 25,
-  midfoot_left: 18,
-  midfoot_right: 17,
-  heel: 46,
-};
 
 // 압력 분포 → 구간별 색 레벨. 각 구간의 점유율(=값/전체합)로 판정한다.
 // 5구간 평균 점유율이 20% 이므로 30%↑ 높음(빨강), 15~30% 보통(노랑), 15%↓ 낮음(초록).
@@ -635,41 +707,62 @@ const parseHitmap = (json: string): Record<FootZone, number> | null => {
 const FootHeatmap = ({ footSensorData, loading }: { footSensorData?: FootSensorDataResponseDto[]; loading?: boolean }) => {
   if (loading) return <NoDataHint />;
 
-  // 좌/우 센서의 hitmapJson(5구간)으로 실제 압력 색을 칠한다. 데이터가 없으면 목업으로 폴백.
+  // 좌/우 센서의 hitmapJson(5구간)으로 실제 압력 색을 칠한다. 히트맵이 비었거나 모두 0이면
+  // (인솔 미연결로 저장된 기록) 그 발은 회색 점으로 미측정 표시한다.
   // 점 위치는 실시간 화면과 동일한 footPositions 를 쓰고, 각 점에 해당 구간 색을 입힌다.
-  const dotsFor = (side: 'L' | 'R', re: RegExp): FootDot[] => {
+  const footFor = (side: 'L' | 'R', re: RegExp): { dots: FootDot[]; measured: boolean } => {
     const data = footSensorData?.find((f) => re.test(f.footSide));
-    const levels = zoneLevels((data && parseHitmap(data.hitmapJson)) || MOCK_HITMAP);
-    return footPositions(side).map((p, i) => ({ x: p.x, y: p.y, r: DOT_RADII[i], level: levels[DOT_ZONES[i]] }));
+    const vals = data ? parseHitmap(data.hitmapJson) : null;
+    const levels = vals && FOOT_ZONES.some((z) => vals[z] > 0) ? zoneLevels(vals) : null;
+    return {
+      measured: levels != null,
+      dots: footPositions(side).map((p, i) => ({
+        x: p.x,
+        y: p.y,
+        r: DOT_RADII[i],
+        level: levels ? levels[DOT_ZONES[i]] : 'none',
+      })),
+    };
   };
+  const left = footFor('L', /left|왼/i);
+  const right = footFor('R', /right|오른/i);
 
   return (
     <View>
       <View className="flex-row justify-center gap-7">
-        <FootSvg side="L" dots={dotsFor('L', /left|왼/i)} />
-        <FootSvg side="R" dots={dotsFor('R', /right|오른/i)} />
+        <FootSvg side="L" dots={left.dots} measured={left.measured} />
+        <FootSvg side="R" dots={right.dots} measured={right.measured} />
       </View>
       <View
         className="flex-row justify-center gap-[14px] mt-3 pt-[10px]"
         style={{ borderTopWidth: 0.5, borderTopColor: 'rgba(124,58,237,0.08)' }}
       >
-        <LegendDot color="#ef4444" label="높음" />
-        <LegendDot color="#f59e0b" label="보통" />
-        <LegendDot color="#10b981" label="낮음" />
+        {left.measured || right.measured ? (
+          <>
+            <LegendDot color="#ef4444" label="높음" />
+            <LegendDot color="#f59e0b" label="보통" />
+            <LegendDot color="#10b981" label="낮음" />
+          </>
+        ) : (
+          <Text className="text-[11px] font-medium" style={{ color: MUTED_TEXT }}>
+            인솔을 연결하고 달리면 발바닥 압력 분포가 기록돼요
+          </Text>
+        )}
       </View>
     </View>
   );
 };
 
-const FOOT_COLORS = { high: '#ef4444', mid: '#f59e0b', low: '#10b981' };
+const FOOT_COLORS: Record<FootLevel, string> = { high: '#ef4444', mid: '#f59e0b', low: '#10b981', none: '#d9d0f0' };
 
-const FootSvg = ({ side, dots }: { side: 'L' | 'R'; dots: FootDot[] }) => (
+const FootSvg = ({ side, dots, measured }: { side: 'L' | 'R'; dots: FootDot[]; measured: boolean }) => (
   <View className="items-center">
     <Text
       className="text-[10px] mb-[6px] tracking-[0.8px] font-bold uppercase"
       style={{ color: '#7c6bb5' }}
     >
       {side === 'L' ? '왼발' : '오른발'}
+      {!measured && ` · ${UNMEASURED}`}
     </Text>
     <Svg width={80} height={130} viewBox="0 0 80 130">
       <Defs>
@@ -696,41 +789,41 @@ const isNeutralPronation = (type: string): boolean =>
   /정상|중립|normal|neutral/i.test(type);
 
 const Pronation = ({ footSensorData, loading }: { footSensorData?: FootSensorDataResponseDto[]; loading?: boolean }) => {
-  // 저장 기록 로딩 중에는 '--'. 로딩 후엔 상세 데이터가 있으면 좌/우 센서로, 없으면 목업으로 표시.
+  // 저장 기록 로딩 중에는 '--'. 로딩 후엔 좌/우 센서 값으로, 해당 발 데이터가 없으면 미측정으로 표시.
   if (loading) return <NoDataHint />;
-  if (footSensorData && footSensorData.length > 0) {
-    return (
-      <View className="flex-row gap-[10px]">
-        {footSensorData.map((f) => {
-          const good = isNeutralPronation(f.pronationType);
-          const isLeft = /left|왼/i.test(f.footSide);
-          return (
-            <PronationCard
-              key={f.sensorDataId}
-              side={isLeft ? '왼발' : '오른발'}
-              status={f.pronationType}
-              tone={good ? 'good' : 'warn'}
-              tilt={good ? 0 : isLeft ? -12 : 12}
-            />
-          );
-        })}
-      </View>
-    );
-  }
+  const sides: { label: string; re: RegExp; isLeft: boolean }[] = [
+    { label: '왼발', re: /left|왼/i, isLeft: true },
+    { label: '오른발', re: /right|오른/i, isLeft: false },
+  ];
   return (
     <View className="flex-row gap-[10px]">
-      <PronationCard side="왼발" status="약간 과내전" tone="warn" tilt={-12} />
-      <PronationCard side="오른발" status="중립" tone="good" tilt={0} />
+      {sides.map(({ label, re, isLeft }) => {
+        const status = footSensorData?.find((f) => re.test(f.footSide))?.pronationType || UNMEASURED;
+        const tone: PronationTone =
+          status === UNMEASURED ? 'none' : isNeutralPronation(status) ? 'good' : 'warn';
+        return (
+          <PronationCard
+            key={label}
+            side={label}
+            status={status}
+            tone={tone}
+            tilt={tone === 'warn' ? (isLeft ? -12 : 12) : 0}
+          />
+        );
+      })}
     </View>
   );
 };
 
-const PRONATION_COLORS = {
+type PronationTone = 'good' | 'warn' | 'none';
+
+const PRONATION_COLORS: Record<PronationTone, { bg: string; border: string; text: string; chip: string }> = {
   good: { bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.32)', text: '#047857', chip: 'rgba(16,185,129,0.18)' },
   warn: { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.32)', text: '#b45309', chip: 'rgba(245,158,11,0.2)' },
+  none: { bg: 'rgba(155,140,197,0.08)', border: 'rgba(155,140,197,0.25)', text: '#9b8cc5', chip: 'rgba(155,140,197,0.15)' },
 };
 
-const PronationCard = ({ side, status, tone, tilt }: { side: string; status: string; tone: 'good' | 'warn'; tilt: number }) => {
+const PronationCard = ({ side, status, tone, tilt }: { side: string; status: string; tone: PronationTone; tilt: number }) => {
   const c = PRONATION_COLORS[tone];
   return (
     <View
@@ -823,11 +916,9 @@ const CoachSummaryCard = ({
           <CoachBullet key={i} tone={COACH_TONES[i % COACH_TONES.length]} title={it.title} body={it.body} />
         ))
       ) : (
-        <>
-          <CoachBullet tone="good" title="안정적인 페이스 유지" body={`3km까지 평균 페이스 5'22"을 일관되게 유지했어요. 호흡 리듬이 좋았어요.`} />
-          <CoachBullet tone="warn" title="후반 피로 누적" body="4km 이후 페이스가 26초 느려졌고 뒤꿈치 착지가 증가했어요." />
-          <CoachBullet tone="info" title="왼발 프로네이션 주의" body="왼발 약간 과내전. 발목 강화 운동(카프 레이즈)을 추천드려요." />
-        </>
+        <Text className="text-[12px] font-medium py-1" style={{ color: 'rgba(255,255,255,0.85)' }}>
+          이번 러닝에는 AI 코칭 기록이 없어요. 1분 이상 달리면 코치가 분석을 남겨요.
+        </Text>
       )}
     </View>
   </LinearGradient>

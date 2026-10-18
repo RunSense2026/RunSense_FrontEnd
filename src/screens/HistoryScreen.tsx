@@ -471,7 +471,8 @@ interface RunRowProps {
 }
 
 const RunRow = ({ date, weekday, dist, time, pace, form, pr, onPress }: RunRowProps) => {
-  const formColor = form >= 85 ? '#10b981' : form >= 80 ? '#7c3aed' : '#f59e0b';
+  // 폼 점수 0 = 워치 없이 뛴 기록(미측정)
+  const formColor = form <= 0 ? '#9b8cc5' : form >= 85 ? '#10b981' : form >= 80 ? '#7c3aed' : '#f59e0b';
   return (
     <Pressable onPress={onPress} className="flex-row items-center gap-3 px-[14px] py-[13px]">
       <View className="w-[44px] items-center">
@@ -511,7 +512,7 @@ const RunRow = ({ date, weekday, dist, time, pace, form, pr, onPress }: RunRowPr
         }}
       >
         <Text className="text-[8px] font-bold tracking-[0.48px]" style={{ color: formColor }}>FORM</Text>
-        <Text className="text-[14px] font-bold leading-[18px] mt-[1px] tracking-[-0.28px]" style={{ color: formColor }}>{form}</Text>
+        <Text className="text-[14px] font-bold leading-[18px] mt-[1px] tracking-[-0.28px]" style={{ color: formColor }}>{form > 0 ? form : '--'}</Text>
       </View>
       <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
         <Path d="M9 18l6-6-6-6" stroke="#9b8cc5" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
