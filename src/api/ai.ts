@@ -56,12 +56,27 @@ const toFootWire = (foot: AiFootDataDto): FootDataWire => ({
   },
 });
 
-const toRequestWire = (dto: AiCoachingRequestDto): CoachingRequestWire => ({
+const roundOrNull = (v: number | null): number | null => (v == null ? null : Math.round(v));
+
+/** 실시간 코칭 요청 → 와이어. 백엔드 프록시(POST /api/run/coaching)도 같은 형식을 쓴다. */
+export const toCoachingRequestWire = (dto: AiCoachingRequestDto): CoachingRequestWire => ({
   pace: dto.pace,
   heart_rate: Math.round(dto.heartRate),
   cadence: Math.round(dto.cadence),
   left_foot: toFootWire(dto.leftFoot),
   right_foot: toFootWire(dto.rightFoot),
+  ...(dto.profile
+    ? {
+        profile: {
+          age: dto.profile.age,
+          height: dto.profile.height,
+          weight: dto.profile.weight,
+          // AI 서버는 심박 값을 정수로 받는다
+          resting_heart_rate: roundOrNull(dto.profile.restingHeartRate),
+          lthr: roundOrNull(dto.profile.lthr),
+        },
+      }
+    : {}),
 });
 
 const toUpdateWire = (dto: AiCoachingUpdateDto): CoachingUpdateWire => ({
@@ -78,7 +93,7 @@ const fromResponseWire = (wire: CoachingResponseWire): AiCoachingResultDto => ({
   recExercise: wire.rec_exercise,
 });
 
-const fromVoiceResponseWire = (
+export const fromVoiceResponseWire = (
   wire: CoachingWithVoiceResponseWire,
 ): AiCoachingWithVoiceDto => ({
   feedbackText: wire.feedback_text,
@@ -148,15 +163,15 @@ const toLthrCoachingRequestWire = (
 
 /**
  * 실시간 AI 코칭 생성 — POST /ai/coaching (러닝 중 1분 간격 호출)
- * 양발(left_foot·right_foot) 센서 데이터를 함께 보내며, 응답에는 서버가 합성한
- * TTS 음성 파일 경로(voiceFile)가 포함된다.
+ * 양발(left_foot·right_foot) 센서 데이터와 (있으면) 사용자 프로필을 함께 보내며,
+ * 응답에는 서버가 합성한 TTS 음성 파일 경로(voiceFile)가 포함된다.
  */
 export const createCoaching = async (
   body: AiCoachingRequestDto,
 ): Promise<AiCoachingWithVoiceDto> => {
   const res = await aiClient.post<CoachingWithVoiceResponseWire>(
     '/ai/coaching',
-    toRequestWire(body),
+    toCoachingRequestWire(body),
   );
   return fromVoiceResponseWire(res.data);
 };

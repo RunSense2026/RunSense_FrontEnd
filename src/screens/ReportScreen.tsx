@@ -10,12 +10,11 @@ import { FOOT_PATH, footPositions } from '@/components/domain/FootPressure';
 import { saveRun, readRun, deleteRun, createCoachingReport } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import type {
-  AiCoachingResponseDto,
   RunningActivityCreateRequestDto,
   RunningActivityDetailResponseDto,
   FootSensorDataResponseDto,
 } from '@/types/api';
-import type { AiCoachingLogDto, AiCoachingReportDto } from '@/types/aiApi';
+import type { AiCoachingReportDto } from '@/types/aiApi';
 
 import { fmtPace, fmtTime, secToHms, spkToPace } from '@/utils/format';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
@@ -39,14 +38,6 @@ const MOCK_RUN = {
   cadence: 178,
   formScore: 84,
 };
-
-// 백엔드에 저장된 AI 코칭 → AI 서버 요약 리포트 요청용 로그 목록.
-const toCoachingLogs = (coachings: AiCoachingResponseDto[]): AiCoachingLogDto[] =>
-  coachings.map((c) => ({
-    feedbackText: c.feedbackText,
-    focusPoint: c.focusPoint || null,
-    recExercise: c.recExercise || null,
-  }));
 
 const KO_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -104,29 +95,6 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
     };
   }, [activityId]);
 
-  // 저장된 기록을 열었을 때는 백엔드에 함께 저장된 코칭들을 AI 서버로 넘겨 요약을 다시 만든다.
-  // (AI 서버는 리포트를 저장하지 않으므로 조회 대신 매번 생성한다)
-  useEffect(() => {
-    const logs = detail?.aiCoachings;
-    if (activityId == null || !logs || logs.length === 0) return;
-    let cancelled = false;
-    setReportGenerating(true);
-    createCoachingReport(toCoachingLogs(logs))
-      .then((r) => {
-        if (!cancelled) setReport(r);
-      })
-      .catch(() => {
-        // AI 서버 미응답 시 백엔드 코칭/목업으로 폴백한다.
-        if (!cancelled) setReport(null);
-      })
-      .finally(() => {
-        if (!cancelled) setReportGenerating(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activityId, detail]);
-
   // 저장된 기록을 기록 탭에서 연 직후, 상세가 도착하기 전(렌더링 전) 구간.
   // 이때만 하드코딩 목업 대신 '--' 를 표시하고, 로딩이 끝나면 평소처럼(목업 폴백 포함) 렌더한다.
   const loadingSaved = activityId != null && !detail;
@@ -157,8 +125,9 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
         .map((s) => ({ km: Number(s.lapNumber), pace: paceToSeconds(s.lapPace), label: s.lapPace }))
     : (runSummary?.splits ?? []).map((s) => ({ km: s.km, pace: s.paceSec, label: fmtPace(s.paceSec) }));
 
-  // AI 요약 리포트가 있으면 그 항목을, 없으면 백엔드 러닝 상세의 코칭으로 폴백한다.
-  // (둘 다 없으면 CoachSummaryCard 내부 목업이 표시된다.)
+  // AI 요약 항목: 갓 뛴 러닝은 AI 서버가 만든 리포트, 저장된 기록은 백엔드가 저장 시 정리해 둔
+  // 요약 항목(detail.aiCoachings — focusPoint=제목, feedbackText=설명)을 쓴다.
+  // 둘 다 없으면 CoachSummaryCard 내부 목업이 표시된다.
   const coachTitle = report?.summaryTitle;
   const coachItems = report
     ? report.items?.map((it) => ({
@@ -218,6 +187,9 @@ export const ReportScreen = ({ navigation, route }: ScreenProps<'Report'>) => {
       const payload = buildRunPayload(runSummary);
       const result = await saveRun(payload);
       setSaveState('saved');
+      // AI 서버 리포트 생성이 실패했으면 백엔드가 저장하며 만든 요약으로 대신한다.
+      const savedSummary = result.aiCoachingSummary;
+      if (savedSummary) setReport((prev) => prev ?? savedSummary);
       if (!silent) Alert.alert('저장 완료', `러닝 기록이 저장되었어요. (#${result.activityId})`);
     } catch (e) {
       setSaveState('idle');
@@ -431,6 +403,15 @@ const IconBtn = ({
   </Pressable>
 );
 
+// 백엔드는 AI 코칭을 최대 3개만 받는다(4개 이상이면 400).
+const MAX_SAVED_COACHINGS = 3;
+
+// 러닝 전체를 대표하도록 처음·중간·마지막처럼 고르게 max 개를 고른다.
+const pickSpread = <T,>(items: T[], max: number): T[] =>
+  items.length <= max
+    ? items
+    : Array.from({ length: max }, (_, i) => items[Math.round((i * (items.length - 1)) / (max - 1))]);
+
 // 러닝 저장 요청 본문을 구성한다. 실제 세션 값(run)이 있으면 상위 지표(거리·시간·페이스·폼)는
 // 그 값으로 채우고, 구간/발센서 등 세부 항목은 (아직 실데이터가 없어) 목업으로 둔다.
 const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto => {
@@ -471,7 +452,7 @@ const buildRunPayload = (run?: RunSummaryParam): RunningActivityCreateRequestDto
         hitmapJson: JSON.stringify({ forefoot_left: 23, forefoot_right: 22, midfoot_left: 19, midfoot_right: 18, heel: 44 }),
       },
     ],
-    aiCoachings: (run?.coachings ?? []).map((c) => ({
+    aiCoachings: pickSpread(run?.coachings ?? [], MAX_SAVED_COACHINGS).map((c) => ({
       feedbackText: c.feedbackText,
       focusPoint: c.focusPoint ?? '',
       recExercise: c.recExercise ?? '',

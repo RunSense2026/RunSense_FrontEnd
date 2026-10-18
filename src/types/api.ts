@@ -2,6 +2,8 @@
 // 출처: 백엔드 OpenAPI 3.1 스펙 (서버 주소는 .env 의 API_BASE_URL)
 // 모든 응답은 { success, message, data } 공통 래퍼로 감싸진다.
 
+import type { CoachingRequestWire, CoachingWithVoiceResponseWire } from './aiApi';
+
 /** 모든 API 응답의 공통 래퍼 */
 export interface ApiResponse<T> {
   success: boolean;
@@ -180,7 +182,7 @@ export interface FootSensorDataCreateRequestDto {
   hitmapJson: string;
 }
 
-/** AI 코칭 요약 (최대 3개) */
+/** AI 코칭 (최대 3개 — 4개 이상이면 400). 백엔드가 저장 시 이 목록으로 AI 요약을 만든다 */
 export interface AiCoachingCreateRequestDto {
   /** 피드백 내용 */
   feedbackText: string;
@@ -204,8 +206,23 @@ export interface RunningActivityCreateRequestDto {
   lapSplits: LapSplitCreateRequestDto[];
   /** 발 센서 데이터 (정확히 2개) */
   footSensorData: FootSensorDataCreateRequestDto[];
-  /** AI 코칭 (0~3개) */
+  /** AI 코칭 (0~3개). 빈 배열이면 백엔드가 AI 요약을 만들지 않는다 */
   aiCoachings: AiCoachingCreateRequestDto[];
+}
+
+/** AI 코칭 요약 항목 */
+export interface SummaryItemDto {
+  title: string;
+  description: string;
+  recExercise: string | null;
+  count: number;
+}
+
+/** AI 코칭 요약 — 백엔드가 러닝 저장 시 AI 서버로 생성한다 */
+export interface SummaryResponseDto {
+  summaryTitle: string;
+  totalCoachingCount: number;
+  items: SummaryItemDto[];
 }
 
 /** 러닝 기록 요약 (생성 응답 / 리스트 항목 공용) */
@@ -216,9 +233,11 @@ export interface RunningActivityResponseDto {
   pace: string;
   activityDate: string;
   formScore: number;
-  lapSplitCount: number;
-  footSensorDataCount: number;
-  aiCoachingCount: number;
+  /**
+   * AI 코칭 요약 — 코칭 없이 저장했으면 null.
+   * 주의(2026-10-19 실측): 생성 응답에만 채워지고, 리스트 조회에서는 저장된 기록도 null 이다.
+   */
+  aiCoachingSummary: SummaryResponseDto | null;
 }
 
 /** 모든 기간 러닝 기록 리스트 응답 — GET /api/run */
@@ -251,12 +270,19 @@ export interface FootSensorDataResponseDto {
   hitmapJson: string;
 }
 
-/** AI 코칭 조회 응답 */
+/**
+ * 저장된 AI 코칭 요약 항목 — 러닝 상세(detail.aiCoachings)
+ * 러닝 중 받은 코칭 원본이 아니라, 저장 시 백엔드가 만든 AI 요약 리포트 항목을
+ * title → focusPoint, description → feedbackText 로 옮겨 담은 값이다.
+ */
 export interface AiCoachingResponseDto {
   coachingId: number;
+  /** 요약 항목 설명 */
   feedbackText: string;
+  /** 요약 항목 제목 */
   focusPoint: string;
-  recExercise: string;
+  /** 추천 운동 */
+  recExercise: string | null;
 }
 
 /** 러닝 기록 단건 상세 응답 — GET /api/run/{activityId} */
@@ -269,8 +295,17 @@ export interface RunningActivityDetailResponseDto {
   formScore: number;
   lapSplits: LapSplitResponseDto[];
   footSensorData: FootSensorDataResponseDto[];
+  /** 저장 시 정리된 AI 코칭 요약 항목 (코칭 없이 저장했으면 빈 배열) */
   aiCoachings: AiCoachingResponseDto[];
 }
+
+/**
+ * 실시간 AI 코칭 — POST /api/run/coaching (인증 필요)
+ * 백엔드가 AI 서버 `POST /ai/coaching` 에 그대로 전달하는 프록시라 본문·응답이 AI 서버와 같은 snake_case 다.
+ * (profile 필드는 받지 않는다)
+ */
+export type RunCoachingRequestDto = Omit<CoachingRequestWire, 'profile'>;
+export type RunCoachingResponseDto = CoachingWithVoiceResponseWire;
 
 // ─── Public (날씨 · 위치 · 대기질) ────────────────────────────────
 // 공공데이터(기상청·에어코리아)와 역지오코딩은 백엔드가 대신 호출한다.
