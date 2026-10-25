@@ -14,6 +14,7 @@ import {
   isWearSupported,
   parseWearData,
   wearBridge,
+  type WatchHeartRate,
   type WatchLive,
   type WatchRunComplete,
   type WatchRunState,
@@ -175,6 +176,11 @@ export const useWatchSync = (): void => {
         case WEAR_PATH.RUN_LIVE: {
           const live = parseWearData<WatchLive>(msg);
           if (live) store.setLive(live);
+          break;
+        }
+        case WEAR_PATH.HEART_RATE: {
+          const hr = parseWearData<WatchHeartRate>(msg);
+          if (hr) store.setHeartRate(hr);
           break;
         }
         case WEAR_PATH.RUN_COMPLETE: {

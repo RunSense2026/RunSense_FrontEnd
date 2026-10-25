@@ -30,6 +30,8 @@ export const WEAR_PATH = {
   AUTH_REQUEST: '/runsense/auth/request',
   RUN_STATE: '/runsense/run/state',
   RUN_LIVE: '/runsense/run/live',
+  /** 폰 러닝 중 워치 심박 — 워치에서 러닝을 시작하지 않아도 보낸다 */
+  HEART_RATE: '/runsense/hr',
   RUN_COMPLETE: '/runsense/run/complete',
   OPEN_REPORT: '/runsense/open_report',
 } as const;
@@ -44,6 +46,13 @@ export interface WatchLive {
   heartRate: number;
   cadence: number;
   formScore: number;
+}
+
+/** 워치 → 폰 `/runsense/hr` — 폰 러닝 중 심박이 바뀔 때마다(같아도 2초마다) */
+export interface WatchHeartRate {
+  /** bpm, 측정 전·손목 이탈이면 0 */
+  heartRate: number;
+  state: 'measuring' | 'acquiring' | 'offBody' | 'unavailable' | 'unsupported' | string;
 }
 
 /** 워치 → 폰 `/runsense/run/state` */

@@ -1,16 +1,21 @@
 import { useEffect, useRef } from 'react';
 
-import { useWatchLive } from '@/stores/watchStore';
+import { useWatchHeartRate, useWatchLive } from '@/stores/watchStore';
 import { isWearSupported, wearBridge } from '@/wear/wearBridge';
 import type { AiCoachingWithVoiceDto } from '@/types/aiApi';
 
+/** 최근 5분 = 1초 tick × 300 */
+const RECENT_HR_SAMPLES = 300;
+
 export interface WatchRunLink {
-  /** 현재 심박(bpm) — 워치 값이 있으면 워치, 없으면 시뮬레이션 */
+  /** 현재 심박(bpm) — 워치 실측값, 측정 안 되면 0 */
   hr: number;
   /** 현재 케이던스(spm) */
   cad: number;
   /** 심박이 워치 센서에서 온 값인지 */
   hrFromWatch: boolean;
+  /** 최근 5분 심박 샘플(1초 간격, 실측만) — 스파크라인용 */
+  recentHr: number[];
   /** 러닝 전체 평균 심박 (리포트 저장용) — 워치 실측 샘플만 평균, 없으면 undefined */
   avgHr: number | undefined;
   /** 러닝 전체 평균 케이던스 — 워치·인솔 실측 샘플만 평균, 없으면 undefined */
@@ -22,9 +27,11 @@ export interface WatchRunLink {
 /**
  * 폰 러닝 화면(DashboardA)과 갤럭시 워치를 잇는다.
  *
- *  - 워치가 `/runsense/run/live` 로 보내는 심박·케이던스·폼 점수를 화면 값으로 쓴다.
- *    케이던스는 워치가 없으면 인솔 걸음 수(insoleCadence)로, 둘 다 없으면 시뮬레이션 값으로 폴백한다.
- *    시뮬레이션 값은 화면 표시용일 뿐 리포트 평균(avgHr·avgCad)에는 넣지 않는다.
+ *  - 심박은 워치 실측값만 쓴다. 폰 러닝 중 워치가 `/runsense/hr` 로 따로 보내는 값을 우선하고,
+ *    워치에서도 러닝 중이면 `/runsense/run/live` 값을 쓴다. 둘 다 없으면 0(화면엔 --).
+ *  - 케이던스·폼 점수는 `/runsense/run/live` 값을 쓴다. 케이던스는 워치가 없으면
+ *    인솔 걸음 수(insoleCadence)로, 둘 다 없으면 시뮬레이션 값으로 폴백한다.
+ *    케이던스 시뮬레이션 값은 화면 표시용일 뿐 리포트 평균(avgCad)에는 넣지 않는다.
  *  - 화면에 있는 동안 폰 러닝 중임을 워치에 알려, 워치가 기록 저장·코칭 생성을 폰에 맡기게 한다.
  *  - 폰이 만든 AI 코칭을 워치 화면에도 띄운다.
  */
@@ -36,12 +43,12 @@ export const useWatchRunLink = (
   insoleCadence = 0,
 ): WatchRunLink => {
   const live = useWatchLive();
+  const relayHr = useWatchHeartRate();
 
-  const simulatedHr = 156 + Math.round(Math.sin(tick / 4) * 3);
   const simulatedCad = 178 + Math.round(Math.sin(tick / 3) * 2);
 
-  const hrFromWatch = !!live && live.heartRate > 0;
-  const hr = hrFromWatch ? live!.heartRate : simulatedHr;
+  const hr = relayHr > 0 ? relayHr : live && live.heartRate > 0 ? live.heartRate : 0;
+  const hrFromWatch = hr > 0;
   const realCad = live && live.cadence > 0 ? live.cadence : insoleCadence;
   const cad = realCad > 0 ? realCad : simulatedCad;
 
@@ -50,10 +57,12 @@ export const useWatchRunLink = (
   const hrCount = useRef(0);
   const cadSum = useRef(0);
   const cadCount = useRef(0);
+  const recentHr = useRef<number[]>([]);
   useEffect(() => {
     if (hrFromWatch) {
       hrSum.current += hr;
       hrCount.current += 1;
+      recentHr.current = [...recentHr.current, hr].slice(-RECENT_HR_SAMPLES);
     }
     if (realCad > 0) {
       cadSum.current += realCad;
@@ -86,6 +95,7 @@ export const useWatchRunLink = (
     hr,
     cad,
     hrFromWatch,
+    recentHr: recentHr.current,
     avgHr: hrCount.current > 0 ? Math.round(hrSum.current / hrCount.current) : undefined,
     avgCad: cadCount.current > 0 ? Math.round(cadSum.current / cadCount.current) : undefined,
     formScore: live?.formScore && live.formScore > 0 ? live.formScore : undefined,

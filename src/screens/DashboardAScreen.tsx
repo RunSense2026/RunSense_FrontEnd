@@ -24,6 +24,8 @@ import type { ScreenProps } from '@/types/navigation';
 
 // 우측 상단 심박 존(역치) 배지 표시 여부 — 코드는 남겨두고 숨김 처리(필요 시 true 로).
 const SHOW_HR_ZONE = false;
+// 워치 심박이 없을 때 심박 카드 색
+const HR_EMPTY_COLOR = 'rgba(255,255,255,0.35)';
 
 // ═════════════════════════════════════════════════════════════
 // VARIATION A — "Pace Hero" — pace dominates as a glowing ring
@@ -75,7 +77,7 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
     };
   });
 
-  // 심박·케이던스 — 갤럭시 워치가 연결돼 있으면 워치 센서값, 아니면 시뮬레이션.
+  // 심박 — 갤럭시 워치 실측값만(측정 안 되면 0 → 화면 --). 케이던스 — 워치·인솔, 둘 다 없으면 시뮬레이션.
   // 거리 모드 목표 페이스는 워치 페이스 링 기준으로도 쓰인다.
   const watch = useWatchRunLink(tick, liveCoaching, route.params?.targetPaceSpk, insoleCadence);
   const { hr, cad } = watch;
@@ -90,9 +92,20 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
   // 현재 위치 지역명(홈·코스 화면과 동일한 GPS→역지오코딩 방식).
   const { name: locationName } = useResolvedLocation();
 
-  // HR 스파크라인 데이터는 tick(1초) 단위로만 바뀌면 충분하다. useMemo 로 참조를
-  // 고정해, 페이스 이징 등으로 화면이 자주 리렌더돼도 스파크라인은 다시 안 그린다.
-  const hrTrace = useMemo(() => genHrTrace(tick), [tick]);
+  // 최근 5분 심박 — 워치 실측 샘플(1초 간격). 배열은 tick 마다만 새로 만들어지므로
+  // 페이스 이징 등으로 화면이 자주 리렌더돼도 스파크라인은 다시 안 그린다.
+  const hrTrace = watch.recentHr;
+  const hrStats = useMemo(
+    () =>
+      hrTrace.length > 0
+        ? {
+            avg: Math.round(hrTrace.reduce((a, b) => a + b, 0) / hrTrace.length),
+            max: Math.max(...hrTrace),
+          }
+        : null,
+    [hrTrace],
+  );
+  const hrAccent = hr > 0 ? zone.color : HR_EMPTY_COLOR;
 
   const deviation = Math.max(-30, Math.min(30, paceSpk - target));
   const ringPct = 0.5 + -deviation / 60;
@@ -131,7 +144,12 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
         <View className="px-4 pt-4 flex-row gap-2">
           <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
           <MetricCard value={fmtTime(sec)} label="시간" />
-          <MetricCard value={String(hr)} unit="bpm" label={watch.hrFromWatch ? '심박수 · 워치' : '심박수'} accent={zone.color} />
+          <MetricCard
+            value={hr > 0 ? String(hr) : '--'}
+            unit="bpm"
+            label={watch.hrFromWatch ? '심박수 · 워치' : '심박수'}
+            accent={hrAccent}
+          />
         </View>
 
         {/* ── 카드 슬라이드 영역(카드만 좌우로 넘어감) ── */}
@@ -151,9 +169,17 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
                   <Text className="text-[11px] text-t3 uppercase tracking-[0.66px] font-semibold">
                     최근 5분 심박
                   </Text>
-                  <Text className="text-[11px] text-t3">평균 154 · 최대 162</Text>
+                  <Text className="text-[11px] text-t3">
+                    {hrStats ? `평균 ${hrStats.avg} · 최대 ${hrStats.max}` : '워치 심박 대기 중'}
+                  </Text>
                 </View>
-                <RSSparkline data={hrTrace} width={284} height={36} stroke={zone.color} />
+                {hrTrace.length >= 2 ? (
+                  <RSSparkline data={hrTrace} width={284} height={36} stroke={zone.color} />
+                ) : (
+                  <View style={{ height: 36, justifyContent: 'center' }}>
+                    <Text className="text-[11px] text-t3">갤럭시 워치에 RunSense 앱을 설치하고 착용하면 실시간 심박이 표시돼요</Text>
+                  </View>
+                )}
               </RSCard>
             </View>
 
@@ -359,10 +385,3 @@ const MicroStat = ({ label, value, unit }: { label: string; value: string; unit?
   </View>
 );
 
-const genHrTrace = (seed: number): number[] => {
-  const arr: number[] = [];
-  for (let i = 0; i < 60; i++) {
-    arr.push(150 + Math.sin((i + seed) / 5) * 4 + Math.cos(i / 3) * 2 + Math.sin(i / 2.3) * 1.5);
-  }
-  return arr;
-};
