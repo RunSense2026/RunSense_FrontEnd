@@ -20,9 +20,9 @@ export { bleErrorMessage } from './insoleBle';
 
 export type InsoleTransport = 'classic' | 'ble';
 
-// 발별 인솔 하드웨어 — 오른발은 Arduino Nano 33 BLE, 왼발은 아직 HC-05/06(블루투스 클래식).
-// 왼발도 Nano 33 BLE 로 바꾸면 L 을 'ble' 로만 바꾸면 된다.
-export const INSOLE_TRANSPORT: Record<FootSide, InsoleTransport> = { L: 'classic', R: 'ble' };
+// 발별 인솔 하드웨어 — 양발 모두 Arduino Nano 33 BLE + 리튬 배터리.
+// HC-05/06(블루투스 클래식) 인솔로 되돌릴 땐 해당 발을 'classic' 으로만 바꾸면 된다.
+export const INSOLE_TRANSPORT: Record<FootSide, InsoleTransport> = { L: 'ble', R: 'ble' };
 
 /** 연결 후보 기기 — classic 은 페어링 목록, ble 는 주변 스캔 결과. id = MAC 주소 */
 export interface InsoleCandidate {
@@ -115,8 +115,11 @@ export const findInsoles = async (
   onUpdate: (candidates: InsoleCandidate[]) => void,
 ): Promise<void> => {
   if (INSOLE_TRANSPORT[foot] === 'ble') {
+    // 양발 인솔이 같은 서비스를 광고하므로, 반대쪽 발에 이미 연결된 기기는 후보에서 뺀다.
+    const other = useInsoleStore.getState()[foot === 'L' ? 'R' : 'L'];
     const found: InsoleCandidate[] = [];
     await scanBleInsoles((c) => {
+      if (other.connected && other.address === c.id) return;
       found.push(c);
       onUpdate([...found]);
     });

@@ -1,4 +1,4 @@
-// FSR 인솔이 보내는 JSON 패킷 타입 — 왼발 HC-05/06(클래식, \n 구분) / 오른발 Nano 33 BLE(NUS notify).
+// FSR 인솔이 보내는 JSON 패킷 타입 — 양발 Nano 33 BLE(NUS notify). 클래식(HC-05/06)이면 \n 구분.
 // 예) {"foot":"R","timestamp":12345,"steps":10,"stepEvent":false,"total":123.4,"avg":[1.1,2.2,3.3,4.4,5.5]}
 
 export type FootSide = 'L' | 'R';
