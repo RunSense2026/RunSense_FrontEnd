@@ -5,8 +5,10 @@ import Geolocation from '@react-native-community/geolocation';
 import { haversineMeters, ensureLocationPermission } from '@/utils/geo';
 
 // GPS 거리 누적 시 잡음을 거르는 임계값.
-const MAX_ACCURACY_M = 50; // 이 값보다 오차가 큰 fix 는 무시
-const MIN_STEP_M = 1; // 정지 상태 지터 무시
+// 좁은 공간 시연용으로 최소 이동 기준을 없앴다 — 조금만 움직여도 거리가 쌓인다.
+// (대신 가만히 있어도 GPS 흔들림만큼 거리가 늘 수 있다. 실외 러닝용으로 되돌리려면 MIN_STEP_M=1·MAX_ACCURACY_M=50)
+const MAX_ACCURACY_M = 100; // 이 값보다 오차가 큰 fix 는 무시 (실내는 오차가 커서 완화)
+const MIN_STEP_M = 0; // 최소 이동 기준 없음
 const MAX_STEP_M = 75; // 순간이동(튐) 무시
 
 /** km별 구간 페이스 — 완료된 km 1개당 한 항목 */
@@ -73,7 +75,7 @@ export const useRunSession = (paused: boolean): RunSession => {
           if (pausedRef.current || !prev) return;
 
           const d = haversineMeters(prev.lat, prev.lon, latitude, longitude);
-          if (d >= MIN_STEP_M && d <= MAX_STEP_M) setDistM((m) => m + d);
+          if (d > MIN_STEP_M && d <= MAX_STEP_M) setDistM((m) => m + d);
         },
         () => {
           // 위치 오류는 조용히 무시 (다음 fix 를 기다린다)

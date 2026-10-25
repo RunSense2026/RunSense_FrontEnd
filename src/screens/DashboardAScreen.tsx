@@ -142,7 +142,12 @@ export const DashboardAScreen = ({ navigation, route }: ScreenProps<'DashboardA'
 
         {/* Primary metrics */}
         <View className="px-4 pt-4 flex-row gap-2">
-          <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
+          {/* 1km 미만은 m 단위로 — 몇 m 만 움직여도 바로 보이게 */}
+          {distKm < 1 ? (
+            <MetricCard value={String(Math.floor(distKm * 1000))} unit="m" label="거리" />
+          ) : (
+            <MetricCard value={distKm.toFixed(2)} unit="km" label="거리" />
+          )}
           <MetricCard value={fmtTime(sec)} label="시간" />
           <MetricCard
             value={hr > 0 ? String(hr) : '--'}
