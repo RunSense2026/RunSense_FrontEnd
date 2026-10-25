@@ -7,7 +7,7 @@ import { analyzeLthr, createLthrCoaching } from '@/api/ai';
 import { DarkShell, RSTabBar, type TabId } from '@/components/domain';
 import { handleRootTabPress } from '@/navigation/tabRoutes';
 import { useMyLthr } from '@/stores/profileStore';
-import { WATCH_LIVE_STALE_MS, useWatchStore } from '@/stores/watchStore';
+import { WATCH_HR_STALE_MS, WATCH_LIVE_STALE_MS, useWatchStore } from '@/stores/watchStore';
 import { colors } from '@/theme/tokens';
 import { HR_AEROBIC_MAX, HR_THRESHOLD_MAX, hrZoneColor } from '@/utils/format';
 import {
@@ -21,6 +21,8 @@ import {
   isValidHeartRate,
   runningLthrEstimate,
 } from '@/utils/lthr';
+
+import { isWearSupported, wearBridge } from '@/wear/wearBridge';
 
 import type { LthrAnalyzeResponseDto, LthrHeartRateSampleDto } from '@/types/aiApi';
 import type { ScreenProps } from '@/types/navigation';
@@ -38,7 +40,7 @@ interface HeartRateReading {
 }
 
 // 워치 심박이 없을 때 쓰는 시뮬레이션 — 단계별로 실제 테스트와 비슷한 곡선을 그린다.
-// (러닝 대시보드와 같은 방식: 워치가 없으면 시뮬레이션 값으로 폴백)
+// 개발 빌드(__DEV__)에서 워치 없이 흐름을 확인할 때만 쓴다. 릴리스에선 워치 심박을 기다린다.
 const simulatedHeartRate = (stage: Stage, elapsed: number): number => {
   const noise = Math.sin(elapsed * 1.7) * 2 + Math.cos(elapsed * 0.6) * 1.5;
   if (stage === 'rest') return 60 + Math.sin(elapsed * 1.7) * 2;
@@ -48,13 +50,19 @@ const simulatedHeartRate = (stage: Stage, elapsed: number): number => {
   return (min < 10 ? 145 + min * 1.5 : 160 + (min - 10) * 0.3) + noise;
 };
 
-// 현재 심박 — 최근 15초 안에 받은 워치 실시간 심박이 있으면 그 값, 없으면 시뮬레이션 값.
+// 현재 심박 — 워치가 측정 중 보내는 심박(/runsense/hr) → 워치 러닝 실시간 심박 순.
+// 둘 다 없으면 0(측정 안 됨, 샘플에 넣지 않음). 개발 빌드에선 시뮬레이션 값.
 const readHeartRate = (stage: Stage, elapsed: number): HeartRateReading => {
-  const { live, liveAt } = useWatchStore.getState();
-  if (live && Date.now() - liveAt <= WATCH_LIVE_STALE_MS && live.heartRate > 0) {
+  const { heartRate, heartRateAt, live, liveAt } = useWatchStore.getState();
+  const now = Date.now();
+  if (heartRate && now - heartRateAt <= WATCH_HR_STALE_MS && heartRate.heartRate > 0) {
+    return { hr: Math.round(heartRate.heartRate), fromWatch: true };
+  }
+  if (live && now - liveAt <= WATCH_LIVE_STALE_MS && live.heartRate > 0) {
     return { hr: Math.round(live.heartRate), fromWatch: true };
   }
-  return { hr: Math.round(simulatedHeartRate(stage, elapsed)), fromWatch: false };
+  if (__DEV__) return { hr: Math.round(simulatedHeartRate(stage, elapsed)), fromWatch: false };
+  return { hr: 0, fromWatch: false };
 };
 
 const zoneLabel = (hr: number): string =>
@@ -117,6 +125,15 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
       simulated: simulatedRef.current,
     });
   }, [myLthr, navigation]);
+
+  // 측정하는 동안 워치에 폰 측정 중임을 알려 워치가 심박을 실시간으로 보내게 한다(러닝 화면과 같은 신호).
+  useEffect(() => {
+    if (!isWearSupported()) return;
+    void wearBridge.sendPhoneRunState(true);
+    return () => {
+      void wearBridge.sendPhoneRunState(false);
+    };
+  }, []);
 
   const finishRef = useRef(finish);
   finishRef.current = finish;
@@ -189,7 +206,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
     return (
       <RestStage
         seconds={elapsed}
-        currentHR={current?.hr}
+        currentHR={current && current.hr > 0 ? current.hr : undefined}
         fromWatch={current?.fromWatch}
         onCancel={() => navigation.goBack()}
         onTabPress={handleTabPress}
@@ -204,7 +221,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
   const pct = (shown / total) * 100;
   const inMeasure = stage !== 'warmup' && shown >= MEASURE_START_SECONDS;
   const estimate = runningLthrEstimate(testSamplesRef.current);
-  const hr = current?.hr;
+  const hr = current && current.hr > 0 ? current.hr : undefined;
 
   return (
     <DarkShell>
@@ -358,7 +375,7 @@ export const LTHRTestScreen = ({ navigation }: ScreenProps<'LTHRTest'>) => {
                 실시간 심박수
               </Text>
               <Text className="text-[11px] mt-[2px] font-medium" style={{ color: 'rgba(221,214,254,0.6)' }}>
-                최근 60초 · {current?.fromWatch ? '워치 센서' : '시뮬레이션'}
+                최근 60초 · {current?.fromWatch ? '워치 센서' : hr != null ? '시뮬레이션' : '워치 심박 대기 중'}
               </Text>
             </View>
             <View className="items-end">
@@ -551,7 +568,7 @@ const RestStage = ({
         </View>
         {fromWatch != null && (
           <Text className="text-[10px] font-semibold mt-1" style={{ color: 'rgba(167,139,250,0.6)' }}>
-            {fromWatch ? '워치 센서' : '워치 미연결 · 시뮬레이션'}
+            {fromWatch ? '워치 센서' : currentHR != null ? '워치 미연결 · 시뮬레이션' : '워치 심박 대기 중 · 워치를 착용하고 RunSense 앱을 열어 주세요'}
           </Text>
         )}
       </View>
