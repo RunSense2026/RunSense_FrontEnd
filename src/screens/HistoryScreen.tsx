@@ -1,0 +1,524 @@
+import { useCallback, useState } from 'react';
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
+import { isAxiosError } from 'axios';
+import Svg, { Path } from 'react-native-svg';
+
+import { LightShell } from '@/components/domain';
+import { readAllRuns, readRunsByDate } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
+import { gradients } from '@/theme/tokens';
+
+import type { RunningActivityListResponseDto } from '@/types/api';
+import type { TabScreenProps } from '@/types/navigation';
+
+type Period = 'week' | 'month' | 'all';
+type SortKey = 'latest' | 'oldest' | 'distance';
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const SORT_LABELS: Record<SortKey, string> = { latest: '최신순', oldest: '오래된 순', distance: '거리순' };
+
+// "2026-05-23T..." → "5월 23일"
+const fmtMonthDay = (iso: string | number | Date): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '-' : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+};
+
+// "2026-05-23T19:12:37" → { date: "5월 3일", weekday: "일", ts }
+const formatActivityDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: '-', weekday: '', ts: 0 };
+  return {
+    date: `${d.getMonth() + 1}월 ${d.getDate()}일`,
+    weekday: WEEKDAYS[d.getDay()],
+    ts: d.getTime(),
+  };
+};
+
+// "00:28:42" → "28:42" (선행 00시 제거)
+const trimTime = (time: string) => time.replace(/^00:/, '');
+
+// Date → "YYYY-MM-DD" (서버 기간 조회 파라미터 형식)
+const toYMD = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// 주간 그래프 요일 라벨(월~일 순)
+const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+
+// 이번 주 월요일 0시 (요일별 집계 기준점)
+const currentWeekMonday = (): Date => {
+  const today = new Date();
+  const dow = (today.getDay() + 6) % 7; // 월=0 … 일=6
+  const monday = new Date(today);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(today.getDate() - dow);
+  return monday;
+};
+
+// 주간/월간 탭의 시작·종료일 계산
+const periodRange = (period: Period): { startDate: string; endDate: string } => {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - (period === 'week' ? 7 : 30));
+  return { startDate: toYMD(start), endDate: toYMD(end) };
+};
+
+export const HistoryScreen = ({ navigation }: TabScreenProps<'History'>) => {
+  const [period, setPeriod] = useState<Period>('week');
+  const [sort, setSort] = useState<SortKey>('latest');
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [data, setData] = useState<RunningActivityListResponseDto | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 주간 그래프의 '지난주 대비' 비교용 — 지난주(월~일) 합계 거리(km)
+  const [prevWeekKm, setPrevWeekKm] = useState<number | null>(null);
+
+  // period 에 따라 전체(GET /api/run) 또는 기간(GET /api/run/date) 조회
+  const load = useCallback(async () => {
+    if (!isAuthenticated) {
+      setError('러닝 기록을 보려면 로그인해주세요.');
+      setData(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      let result: RunningActivityListResponseDto;
+      if (period === 'all') {
+        result = await readAllRuns();
+      } else {
+        const { startDate, endDate } = periodRange(period);
+        result = await readRunsByDate(startDate, endDate);
+      }
+      setData(result);
+    } catch (e) {
+      const message = isAxiosError(e)
+        ? e.response?.data?.message ?? '러닝 기록을 불러오지 못했어요.'
+        : '러닝 기록을 불러오는 중 오류가 발생했어요.';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated, period]);
+
+  // 화면 포커스 시 + period 변경 시 새로고침 (서버가 기간 필터링)
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  // 주간 탭일 때만 지난주(월~일) 합계를 추가 조회해 '지난주 대비' 비교에 사용한다.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated || period !== 'week') {
+        setPrevWeekKm(null);
+        return;
+      }
+      let cancelled = false;
+      const monday = currentWeekMonday();
+      const prevMon = new Date(monday);
+      prevMon.setDate(monday.getDate() - 7);
+      const prevSun = new Date(monday);
+      prevSun.setDate(monday.getDate() - 1);
+      readRunsByDate(toYMD(prevMon), toYMD(prevSun))
+        .then((r) => {
+          if (!cancelled) setPrevWeekKm(r.totalDistance);
+        })
+        .catch(() => {
+          if (!cancelled) setPrevWeekKm(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [isAuthenticated, period]),
+  );
+
+  // 서버가 기간 필터링을 하므로 클라이언트는 선택한 정렬만 적용한다.
+  const activities = (data?.activities ?? []).slice().sort((a, b) => {
+    if (sort === 'distance') return b.distance - a.distance;
+    const diff = new Date(a.activityDate).getTime() - new Date(b.activityDate).getTime();
+    return sort === 'oldest' ? diff : -diff;
+  });
+
+  // 이번 주(월~일) 요일별 거리 합계 — 주간 그래프용. data.activities 에서 집계한다.
+  const weekBars = (() => {
+    const monday = currentWeekMonday();
+    const todayIdx = (new Date().getDay() + 6) % 7; // 월=0 … 일=6
+    const dist = [0, 0, 0, 0, 0, 0, 0];
+    for (const a of data?.activities ?? []) {
+      const idx = Math.floor((new Date(a.activityDate).getTime() - monday.getTime()) / 86_400_000);
+      if (idx >= 0 && idx < 7) dist[idx] += a.distance;
+    }
+    return WEEK_LABELS.map((day, i) => ({ day, dist: dist[i], isToday: i === todayIdx }));
+  })();
+  const thisWeekKm = weekBars.reduce((s, d) => s + d.dist, 0);
+
+  const periodLabel = period === 'week' ? '최근 7일' : period === 'month' ? '최근 30일' : '전체';
+
+  // 헤더 날짜 범위 (주간/월간은 기간, 전체는 실제 기록 범위)
+  const headerDate = (() => {
+    if (period === 'week' || period === 'month') {
+      const { startDate, endDate } = periodRange(period);
+      return `${fmtMonthDay(startDate)} — ${fmtMonthDay(endDate)}`;
+    }
+    if (activities.length === 0) return '전체 기록';
+    const times = activities.map((a) => new Date(a.activityDate).getTime());
+    return `${fmtMonthDay(Math.min(...times))} — ${fmtMonthDay(Math.max(...times))}`;
+  })();
+
+  return (
+    <LightShell>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 16 }}
+      >
+        {/* Header */}
+        <View className="pt-1 pb-[14px]">
+          <Text className="text-[11px] font-semibold tracking-[0.66px] uppercase" style={{ color: '#7c6bb5' }}>
+            {headerDate}
+          </Text>
+          <Text className="text-[22px] font-bold mt-1 tracking-[-0.66px]" style={{ color: '#1e1b4b' }}>러닝 기록</Text>
+        </View>
+
+        {/* Period tabs */}
+        <View
+          className="flex-row gap-1 p-1 rounded-full mb-[14px]"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.6)',
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.14)',
+          }}
+        >
+          {(['week', 'month', 'all'] as Period[]).map((p) => {
+            const active = period === p;
+            const label = p === 'week' ? '주간' : p === 'month' ? '월간' : '전체';
+            if (active) {
+              return (
+                <Pressable key={p} onPress={() => setPeriod(p)} className="flex-1">
+                  <LinearGradient
+                    colors={['#7c3aed', '#6366f1', '#3b82f6']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{ paddingVertical: 8, borderRadius: 999, alignItems: 'center' }}
+                  >
+                    <Text className="text-white text-[12px] font-bold">{label}</Text>
+                  </LinearGradient>
+                </Pressable>
+              );
+            }
+            return (
+              <Pressable key={p} onPress={() => setPeriod(p)} className="flex-1 py-2 items-center">
+                <Text className="text-[12px] font-bold" style={{ color: '#6b5ca5' }}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Summary cards — 선택 기간 합계 (서버 집계). 로딩 중에는 이전 값 대신 '--' 표시 */}
+        <View className="flex-row gap-2 mb-[14px]">
+          <HSummaryCard label="총 거리" value={loading ? '--' : (data?.totalDistance ?? 0).toFixed(1)} unit="km" trend={periodLabel} />
+          <HSummaryCard label="러닝 횟수" value={loading ? '--' : String(data?.totalCount ?? 0)} unit="회" trend={periodLabel} trendGood />
+          <HSummaryCard label="평균 폼" value={loading ? '--' : Math.round(data?.averageFormScore ?? 0).toString()} unit="점" trend="평균" />
+        </View>
+
+        {period === 'week' && <DailyBarChart bars={weekBars} thisWeekKm={thisWeekKm} prevWeekKm={prevWeekKm} />}
+
+        {/* Section title */}
+        <View className="flex-row justify-between items-baseline mt-4 mb-2">
+          <View className="flex-row items-baseline gap-[6px]">
+            <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>러닝 목록</Text>
+            <Text className="text-[11px] font-medium" style={{ color: '#9b8cc5' }}>{activities.length}건</Text>
+          </View>
+          <SortDropdown value={sort} onChange={setSort} />
+        </View>
+
+        {/* Run list */}
+        {loading ? (
+          <View className="py-10 items-center">
+            <ActivityIndicator color="#7c3aed" />
+          </View>
+        ) : error ? (
+          <Pressable onPress={() => load()} className="py-8 items-center">
+            <Text className="text-[13px] font-medium" style={{ color: '#b45309' }}>{error}</Text>
+            <Text className="text-[12px] mt-1 text-purple-500 font-semibold">다시 시도</Text>
+          </Pressable>
+        ) : activities.length === 0 ? (
+          <View className="py-10 items-center">
+            <Text className="text-[13px] font-medium" style={{ color: '#9b8cc5' }}>아직 러닝 기록이 없어요.</Text>
+          </View>
+        ) : (
+          <View
+            className="rounded-[16px] overflow-hidden"
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.78)',
+              borderWidth: 0.5,
+              borderColor: 'rgba(124,58,237,0.12)',
+            }}
+          >
+            {activities.map((activity, i) => {
+              const { date, weekday } = formatActivityDate(activity.activityDate);
+              return (
+                <View key={activity.activityId}>
+                  {i > 0 && <RunDivider />}
+                  <RunRow
+                    date={date}
+                    weekday={weekday}
+                    dist={activity.distance.toFixed(2)}
+                    time={trimTime(activity.time)}
+                    pace={activity.pace}
+                    form={activity.formScore}
+                    onPress={() => navigation.navigate('Report', { activityId: activity.activityId })}
+                  />
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+    </LightShell>
+  );
+};
+
+// 정렬 드롭다운 — 최신순 / 오래된 순 / 거리순
+const SortDropdown = ({ value, onChange }: { value: SortKey; onChange: (s: SortKey) => void }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ position: 'relative', zIndex: 20 }}>
+      <Pressable onPress={() => setOpen((o) => !o)} className="flex-row items-center gap-[2px]" hitSlop={8}>
+        <Text className="text-[11px] text-purple-500 font-semibold">{SORT_LABELS[value]}</Text>
+        <Text className="text-[9px] text-purple-500">▾</Text>
+      </Pressable>
+      {open && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 22,
+            right: 0,
+            minWidth: 96,
+            backgroundColor: '#ffffff',
+            borderRadius: 12,
+            borderWidth: 0.5,
+            borderColor: 'rgba(124,58,237,0.18)',
+            paddingVertical: 4,
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOpacity: 0.12,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            zIndex: 30,
+          }}
+        >
+          {(['latest', 'oldest', 'distance'] as SortKey[]).map((k) => (
+            <Pressable
+              key={k}
+              onPress={() => {
+                onChange(k);
+                setOpen(false);
+              }}
+              className="px-3 py-[7px]"
+            >
+              <Text
+                className="text-[12px] font-semibold"
+                style={{ color: k === value ? '#7c3aed' : '#6b5ca5' }}
+              >
+                {SORT_LABELS[k]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
+
+const HSummaryCard = ({
+  label,
+  value,
+  unit,
+  trend,
+  trendGood,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  trend: string;
+  trendGood?: boolean;
+}) => (
+  <View
+    className="flex-1 rounded-[16px] px-2 py-3 items-center overflow-hidden"
+    style={{
+      backgroundColor: 'rgba(255,255,255,0.78)',
+      borderWidth: 0.5,
+      borderColor: 'rgba(124,58,237,0.14)',
+    }}
+  >
+    <LinearGradient
+      colors={['#7c3aed', '#6366f1', '#3b82f6']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0 }}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3 }}
+    />
+    <Text className="text-[9px] font-bold tracking-[0.72px] uppercase" style={{ color: '#9b8cc5' }}>
+      {label}
+    </Text>
+    <View className="flex-row items-baseline mt-[6px]">
+      <Text className="text-[24px] font-bold text-purple-500 tracking-[-0.72px] leading-[30px]">{value}</Text>
+      <Text className="text-[11px] ml-[2px] font-medium" style={{ color: '#9b8cc5' }}>{unit}</Text>
+    </View>
+    <Text
+      className="text-[9px] font-semibold mt-1"
+      style={{ color: trendGood ? '#10b981' : '#7c3aed' }}
+    >
+      {trend}
+    </Text>
+  </View>
+);
+
+interface WeekBar {
+  day: string;
+  dist: number;
+  isToday: boolean;
+}
+
+const DailyBarChart = ({
+  bars,
+  thisWeekKm,
+  prevWeekKm,
+}: {
+  bars: WeekBar[];
+  thisWeekKm: number;
+  prevWeekKm: number | null;
+}) => {
+  const max = Math.max(...bars.map((d) => d.dist), 0.001); // 0 나눗셈 방지
+  const diff = prevWeekKm == null ? null : thisWeekKm - prevWeekKm;
+  return (
+    <View
+      className="rounded-[18px] p-[14px]"
+      style={{
+        backgroundColor: 'rgba(255,255,255,0.78)',
+        borderWidth: 0.5,
+        borderColor: 'rgba(124,58,237,0.12)',
+      }}
+    >
+      <View className="flex-row justify-between items-baseline mb-3">
+        <View>
+          <Text className="text-[14px] font-bold" style={{ color: '#1e1b4b' }}>요일별 거리</Text>
+          <Text className="text-[10px] font-medium mt-[2px]" style={{ color: '#9b8cc5' }}>
+            이번 주 합계 {thisWeekKm.toFixed(1)}km
+          </Text>
+        </View>
+        {diff != null && (
+          <Text className="text-[11px] font-bold" style={{ color: diff >= 0 ? '#10b981' : '#ef4444' }}>
+            {diff >= 0 ? '+' : ''}{diff.toFixed(1)}km vs 지난주
+          </Text>
+        )}
+      </View>
+
+      <View className="flex-row items-end gap-[6px] h-[100px]">
+        {bars.map((d) => {
+          const ran = d.dist > 0;
+          const h = ran ? Math.max(8, (d.dist / max) * 88) : 4;
+          return (
+            <View key={d.day} className="flex-1 items-center gap-[6px]">
+              {ran ? (
+                <Text className="text-[10px] font-bold text-purple-500">{d.dist.toFixed(1)}</Text>
+              ) : (
+                <Text className="text-[10px] text-transparent">·</Text>
+              )}
+              {ran ? (
+                <LinearGradient
+                  colors={d.isToday ? ['#a78bfa', '#7c3aed', '#3b82f6'] : ['#c4b5fd', '#8b5cf6']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={{ width: '100%', height: h, borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }}
+                />
+              ) : (
+                <View
+                  className="w-full rounded"
+                  style={{
+                    height: h,
+                    borderWidth: 0.5,
+                    borderColor: 'rgba(167,139,250,0.4)',
+                    borderStyle: 'dashed',
+                  }}
+                />
+              )}
+              <Text
+                className={`text-[11px] ${d.isToday ? 'font-bold' : 'font-medium'}`}
+                style={{ color: d.isToday ? '#7c3aed' : '#9b8cc5' }}
+              >
+                {d.day}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
+
+interface RunRowProps {
+  date: string;
+  weekday: string;
+  dist: string;
+  time: string;
+  pace: string;
+  form: number;
+  pr?: boolean;
+  onPress?: () => void;
+}
+
+const RunRow = ({ date, weekday, dist, time, pace, form, pr, onPress }: RunRowProps) => {
+  // 폼 점수 0 = 워치 없이 뛴 기록(미측정)
+  const formColor = form <= 0 ? '#9b8cc5' : form >= 85 ? '#10b981' : form >= 80 ? '#7c3aed' : '#f59e0b';
+  return (
+    <Pressable onPress={onPress} className="flex-row items-center gap-3 px-[14px] py-[13px]">
+      <View className="w-[44px] items-center">
+        <Text className="text-[10px] font-semibold" style={{ color: '#9b8cc5' }}>{weekday}</Text>
+        <Text className="text-[13px] font-bold mt-[1px]" style={{ color: '#1e1b4b' }}>{date.split(' ')[1]}</Text>
+        <Text className="text-[8px] font-semibold" style={{ color: '#9b8cc5' }}>{date.split(' ')[0]}</Text>
+      </View>
+      <View className="w-px self-stretch" style={{ backgroundColor: 'rgba(124,58,237,0.1)' }} />
+      <View className="flex-1">
+        <View className="flex-row items-baseline gap-[6px] mb-[2px]">
+          <Text className="text-[17px] font-bold tracking-[-0.51px]" style={{ color: '#1e1b4b' }}>
+            {dist}
+            <Text className="text-[10px] font-medium" style={{ color: '#9b8cc5' }}> km</Text>
+          </Text>
+          {pr && (
+            <LinearGradient
+              colors={gradients.action}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999 }}
+            >
+              <Text className="text-white text-[9px] font-bold">PR</Text>
+            </LinearGradient>
+          )}
+        </View>
+        <View className="flex-row gap-[10px]">
+          <Text className="text-[11px] font-medium" style={{ color: '#6b5ca5' }}>⏱ {time}</Text>
+          <Text className="text-[11px] font-medium" style={{ color: '#6b5ca5' }}>· {pace}</Text>
+        </View>
+      </View>
+      <View
+        className="rounded-[10px] px-[10px] py-[6px] items-center"
+        style={{
+          backgroundColor: `${formColor}15`,
+          borderWidth: 0.5,
+          borderColor: `${formColor}40`,
+        }}
+      >
+        <Text className="text-[8px] font-bold tracking-[0.48px]" style={{ color: formColor }}>FORM</Text>
+        <Text className="text-[14px] font-bold leading-[18px] mt-[1px] tracking-[-0.28px]" style={{ color: formColor }}>{form > 0 ? form : '--'}</Text>
+      </View>
+      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+        <Path d="M9 18l6-6-6-6" stroke="#9b8cc5" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </Pressable>
+  );
+};
+
+const RunDivider = () => <View className="h-px mx-[14px]" style={{ backgroundColor: 'rgba(124,58,237,0.12)' }} />;
